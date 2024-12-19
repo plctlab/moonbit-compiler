@@ -27,6 +27,8 @@ Building a programming language is a long journey. It took Rust 9 years and Go 5
 - OCaml 4.14.2
 - [OPAM](https://opam.ocaml.org/)
 
+You must update MoonBit to the latest version. Otherwise, `moonc` can fail with segmentation fault, since the binaries of the language core is not compatible.
+
 ### Build
 
 Build with following scripts:
@@ -37,10 +39,29 @@ opam install -y dune
 dune build -p moonbit-lang
 ```
 
+### Usage
+
+MoonBit's core library is typically installed in `~/.moon/lib/core/`. In following commands, we use `$core` to denote the path. Under `$core/target`, there are folders containing pre-built libraries under different targets: `js`, `wasm` and `wasm-gc`. Let `$target` stand for one of these three.
+
+We use `$src` to denote the path to your main package. This package must contain, along with your source files, a `moon.pkg.json`; if you're not sure how this works, you can use [moon](https://github.com/moonbitlang/moon) to initialize a MoonBit repository.
+
+We use `$obj` to indicate path where object files should be generated; they typically carry a suffix `.core`. We use `$dest` to represent target files, which might be `.js` or `.wasm` according to your target choice.
+
+Compile files with these commands:
+
+```bash
+# Here, main.mbt should be a file containing `fn main`.
+moonc build-package $src/main.mbt -is-main -std-path $core/target/$target/release/bundle -o $obj -target $target
+
+# If you have more than one package, remember to include all of them in -pkg-sources. They should be separated by colon ':'.
+moonc link-core $moonbundle/core.core $obj -o $dest -pkg-config-path $src/moon.pkg.json -pkg-sources $core:$src -target $target
+```
+
+Then `$dest` would be available for use.
+
 ## Contributing
 
-The project is evolving extremely fast that it is not yet ready for massive community 
-contributions. 
+The project is evolving extremely fast that it is not yet ready for massive community contributions. 
 
 If you do have interest in contributing, thank you!
 

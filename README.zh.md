@@ -27,6 +27,8 @@
 - OCaml 4.14.2
 - [OPAM](https://opam.ocaml.org/)
 
+MoonBit 必须升级到最新版本，否则 `moonc` 可能会段错误。这是因为预编译的旧版本 MoonBit 核心可能和编译器不兼容。
+
 ### 构建
 
 使用下列脚本构建
@@ -36,6 +38,26 @@ opam switch create 4.14.2
 opam install -y dune
 dune build -p moonbit-lang
 ```
+
+### 使用
+
+MoonBit 的核心库一般安装在 `~/.moon/lib/core` 下。在下面的命令中，我们会用 `$core` 表示核心库的安装路径。在 `$core/target` 下，有 `js`, `wasm` 和 `wasm-gc` 这三个文件夹，它们包含在对应目标下编译好的核心库。我们用 `$target` 表示这三者之一。
+
+`$src` 表示源代码的路径；在这个文件夹下，除了源代码之外还必须包括一个 `moon.pkg.json`。如果你不清楚如何编写这个文件，可以考虑使用 [moon](https://github.com/moonbitlang/moon) 来初始化。
+
+`$obj` 表示生成中间文件的位置。这些中间文件通常以 `.core` 作为后缀。而 `$dest` 则表示目标文件生成的路径，它们的后缀根据 `$target` 的选择不同而在 `.js` or `.wasm` 中变化。
+
+编译所需的命令如下:
+
+```bash
+# 这里 main.mbt 是一个含有 `fn main` 的文件。
+moonc build-package $src/main.mbt -is-main -std-path $core/target/$target -o $obj -target $target
+
+# 如果有不止一个包，别忘了在 -pkg-sources 里指定所有包的路径。
+moonc link-core $moonbundle/core.core $obj -o $dest -pkg-config-path $src/moon.pkg.json -pkg-sources $core:$src -target $target
+```
+
+执行后，`$dest` 就是编译好的目标代码了。
 
 ## 贡献
 
