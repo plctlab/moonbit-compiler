@@ -17,7 +17,7 @@
 
 ## 路线图
 
-构建一个编程语言是一个漫长的旅程。Rust 和 Go 分别用了 9 年和 5 年到达 1.0 版本。MoonBit 由一个年轻而有干劲的团队开发，正在稳步前进。我们明白，社区的采用和扩展对编程语言来说十分关键，并且我们也致力于打造一个围绕 MoonBit 的积极参与、合作共赢的社区。到目前为止，我们已经开源了[标准库](https://github.com/moonbitlang/core)和绝大多数工具，包括[构建系统](https://github.com/moonbitlang/moon)，[词法分析](https://github.com/moonbit-community/moonlex)，[markdown 解析](https://github.com/moonbit-community/cmark)等，将来还会有更多项目。开放编译器源代码对于安全来说十分重要。开源 Wasm 后端是重要一步，并且我们计划在将来开源更多组建（ moonfmt、moondoc ）。
+构建一个编程语言是一个漫长的旅程。Rust 和 Go 分别用了 9 年和 5 年到达 1.0 版本。MoonBit 由一个年轻而有干劲的团队开发，正在稳步前进。我们明白，社区的采用和扩展对编程语言来说十分关键，并且我们也致力于打造一个围绕 MoonBit 的积极参与、合作共赢的社区。到目前为止，我们已经开源了[标准库](https://github.com/moonbitlang/core)和绝大多数工具，包括[构建系统](https://github.com/moonbitlang/moon)，[词法分析](https://github.com/moonbit-community/moonlex)，[markdown 解析](https://github.com/moonbit-community/cmark)等，将来还会有更多项目。开放编译器源代码对于安全来说十分重要。开源 Wasm 后端是重要一步，并且我们计划在将来开源更多组件（ moonfmt、moondoc ）。
 
 
 ## 从源代码构建

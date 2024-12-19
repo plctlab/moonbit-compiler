@@ -51,7 +51,10 @@ let parse ~diagnostics ~(debug_tokens : bool) (input : mbt_input) :
     Parsing_parse.output =
   match input with
   | File_Path path ->
-      Parsing_parse.parse ~diagnostics ~debug_tokens ~transform:false path
+      (try
+        Parsing_parse.parse ~diagnostics ~debug_tokens ~transform:false path
+      with Sys_error msg ->
+        raise (Arg.Bad ("cannot open file: " ^ path)))
   | Name_Content (name, content) ->
       Parsing_parse.impl_of_string ~name ~debug_tokens ~diagnostics
         ~transform:false content

@@ -43,13 +43,14 @@ and is_main = Driver_config.Common_Opt.is_main
 let moonc_executable_name = "moonc"
 let bundle_core_usage = "moonc bundle-core [options] <input files>"
 let link_core_usage = "moonc link-core [options] <input files>"
-let build_packae_usage = "moonc build-package [options] <input files>"
+let build_package_usage = "moonc build-package [options] <input files>"
 let check_usage = "moonc check [options] <input files>"
 let compile_usage = "moonc compile [options] <input file>"
 let gen_test_info_usage = "moonc gen-test-info [options] <input files>"
 let postprocess_ast = Driver_util.postprocess_ast ~diagnostics
 let write_s name sexp = if not !no_intermediate_file then Io.write_s name sexp
 
+(* TAST here stands for typed AST *)
 let tast_of_ast ~name ~build_context (asts : Parse.output list) :
     Typedtree.output * Global_env.t =
   let write_opt suffix sexp = write_s (name ^ suffix) sexp in
@@ -212,9 +213,9 @@ let build_package () =
   let build_package_spec = Driver_config.Buildpkg_Opt.spec in
   Arg.parse_argv ~current:(ref 1) Sys.argv build_package_spec
     (fun input_file -> input_files := input_file :: !input_files)
-    build_packae_usage;
+    build_package_usage;
   if !input_files = [] && !output_file = "" then (
-    Arg.usage build_package_spec build_packae_usage;
+    Arg.usage build_package_spec build_package_usage;
     exit 0);
   if !output_file = "" then
     output_file := Filename.basename !Basic_config.current_package ^ ".core";
@@ -345,7 +346,7 @@ let compile () =
                     (Sys.executable_name :: String.split_on_char ' ' d)
                 in
                 (try Arg.parse_argv build_flags spec ignore ""
-                 with Arg.Bad s -> prerr_string s);
+                 with Arg.Bad s -> prerr_endline s);
                 ())
       in
       let ast =
@@ -476,7 +477,7 @@ let run_main () =
           (try command () with
           | Arg.Help s -> print_string s
           | Arg.Bad s ->
-              prerr_string s;
+              prerr_endline s;
               exit 2
           | Diagnostics.Fatal_error -> exit 2);
           Driver_compenv.exec_args after
@@ -490,7 +491,7 @@ let run_main () =
                     exit 0),
                 " show version" );
             ]
-            (fun name -> raise (Arg.Bad ("Dont'know what to do with " ^ name)))
+            (fun name -> raise (Arg.Bad ("Don't know what to do with " ^ name)))
             moonc_executable_name;
           exit 2
 
