@@ -50,11 +50,13 @@ MoonBit 的核心库一般安装在 `~/.moon/lib/core` 下。在下面的命令�
 编译所需的命令如下:
 
 ```bash
+bundled=$core/target/$target/release/bundle
+
 # 这里 main.mbt 是一个含有 `fn main` 的文件。
-moonc build-package $src/main.mbt -is-main -std-path $core/target/$target -o $obj -target $target
+moonc build-package $src/main.mbt -is-main -std-path $core/target/$bundled -o $obj -target $target
 
 # 如果有不止一个包，别忘了在 -pkg-sources 里指定所有包的路径。
-moonc link-core $moonbundle/core.core $obj -o $dest -pkg-config-path $src/moon.pkg.json -pkg-sources $core:$src -target $target
+moonc link-core $bundled/core.core $obj -o $dest -pkg-config-path $src/moon.pkg.json -pkg-sources $core:$src -target $target
 ```
 
 执行后，`$dest` 就是编译好的目标代码了。

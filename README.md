@@ -50,11 +50,13 @@ We use `$obj` to indicate path where object files should be generated; they typi
 Compile files with these commands:
 
 ```bash
+bundled=$core/target/$target/release/bundle
+
 # Here, main.mbt should be a file containing `fn main`.
-moonc build-package $src/main.mbt -is-main -std-path $core/target/$target/release/bundle -o $obj -target $target
+moonc build-package $src/main.mbt -is-main -std-path $bundled -o $obj -target $target
 
 # If you have more than one package, remember to include all of them in -pkg-sources. They should be separated by colon ':'.
-moonc link-core $moonbundle/core.core $obj -o $dest -pkg-config-path $src/moon.pkg.json -pkg-sources $core:$src -target $target
+moonc link-core $bundled/core.core $obj -o $dest -pkg-config-path $src/moon.pkg.json -pkg-sources $core:$src -target $target
 ```
 
 Then `$dest` would be available for use.
