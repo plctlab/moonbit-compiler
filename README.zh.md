@@ -27,11 +27,11 @@
 - OCaml 4.14.2
 - [OPAM](https://opam.ocaml.org/)
 
-MoonBit 必须升级到最新版本，否则 `moonc` 可能会段错误。这是因为预编译的旧版本 MoonBit 核心可能和编译器不兼容。
+MoonBit 必须升级/降级到[特定版本](https://github.com/moonbitlang/core/commit/4660d8b3da6ed79e47462d66d40feff177060699)，因为语言的语法已经改变。
 
 ### 构建
 
-使用下列脚本构建
+使用下列脚本构建:
 
 ```
 opam switch create 4.14.2
@@ -45,9 +45,29 @@ MoonBit 的核心库一般安装在 `~/.moon/lib/core` 下。在下面的命令�
 
 `$src` 表示源代码的路径；在这个文件夹下，除了源代码之外还必须包括一个 `moon.pkg.json`。如果你不清楚如何编写这个文件，可以考虑使用 [moon](https://github.com/moonbitlang/moon) 来初始化。
 
-`$obj` 表示生成中间文件的位置。这些中间文件通常以 `.core` 作为后缀。而 `$dest` 则表示目标文件生成的路径，它们的后缀根据 `$target` 的选择不同而在 `.js` or `.wasm` 中变化。
+我们用 `$obj` 表示中间文件生成的地方。它们一般以 `.core` 或者 `.mi` 作为后缀。
 
-编译所需的命令如下:
+我们用 `$dest` 表示目标文件生成的地方。它可以是 `.wat` 或 `.wasm`，但不允许其他后缀。
+
+为了搭建运行环境，请执行如下命令（只需要执行一次）:
+
+```bash
+# 移除已经安装的核心库
+rm -rf $core
+
+# 安装指定的版本
+git clone https://github.com/moonbitlang/core.git $core
+git checkout 4660d8b
+
+# 编译
+moon bundle --source-dir $core
+```
+
+我们强烈建议使用上面的命令重新编译一次标准库。已经构建好的二进制文件可能和这个编译器不兼容。
+
+执行完成后，你应当能在 `$core/target/` 下发现文件夹 `wasm-gc`。
+
+现在你可以使用这些命令来编译 `.mbt` 文件:
 
 ```bash
 bundled=$core/target/$target/release/bundle
@@ -60,6 +80,8 @@ moonc link-core $bundled/core.core $obj -o $dest -pkg-config-path $src/moon.pkg.
 ```
 
 执行后，`$dest` 就是编译好的目标代码了。
+
+如果你仍有疑问，可以参考 `moon run --dry-run` 的输出。
 
 ## 贡献
 

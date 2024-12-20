@@ -12,47 +12,26 @@
    <https://www.moonbitlang.com/licenses/moonbit-public-source-license-v1>.
 *)
 
+(**
+This file is re-implementing basic functionalities of the OCaml standard library `List`.
+
+The intention is that, while OCaml places the function as the first argument
+(like `List.map (fun x -> x + 1) l`),
+this might be less readable for longer functions.
+
+Therefore, we reverse the argument order in Basic_lst.
+You could always choose between this version and the standard library version for more readable code.
+
+Additionally, this file also introduces more facilities than the standard library.
+*)
 
 module Unsafe_external = Basic_unsafe_external
 module Arr = Basic_arr
 open Unsafe_external
 
-let rec map l f =
-  match l with
-  | [] -> []
-  | x1 :: [] ->
-      let y1 = f x1 in
-      [ y1 ]
-  | [ x1; x2 ] ->
-      let y1 = f x1 in
-      let y2 = f x2 in
-      [ y1; y2 ]
-  | [ x1; x2; x3 ] ->
-      let y1 = f x1 in
-      let y2 = f x2 in
-      let y3 = f x3 in
-      [ y1; y2; y3 ]
-  | [ x1; x2; x3; x4 ] ->
-      let y1 = f x1 in
-      let y2 = f x2 in
-      let y3 = f x3 in
-      let y4 = f x4 in
-      [ y1; y2; y3; y4 ]
-  | x1 :: x2 :: x3 :: x4 :: x5 :: tail ->
-      let y1 = f x1 in
-      let y2 = f x2 in
-      let y3 = f x3 in
-      let y4 = f x4 in
-      let y5 = f x5 in
-      y1 :: y2 :: y3 :: y4 :: y5 :: map tail f
+let rec map l f = List.map f l
 
-let rec has_string (l : string list) f =
-  match l with
-  | [] -> false
-  | x1 :: [] -> x1 = f
-  | [ x1; x2 ] -> x1 = f || x2 = f
-  | [ x1; x2; x3 ] -> x1 = f || x2 = f || x3 = f
-  | x1 :: x2 :: x3 :: x4 -> x1 = f || x2 = f || x3 = f || has_string x4 f
+let rec has_string (l : string list) query = List.mem query l
 
 let rec map_combine l1 l2 f =
   match (l1, l2) with
@@ -825,13 +804,7 @@ let rec mem_string (xs : string list) (x : string) =
 let rec mem_int (xs : int list) (x : int) =
   match xs with [] -> false | a :: l -> a = x || mem_int l x
 
-let filter lst p =
-  let rec find ~p accu lst =
-    match lst with
-    | [] -> rev accu
-    | x :: l -> if p x then find (x :: accu) l ~p else find accu l ~p
-  in
-  find [] lst ~p
+let filter lst p = List.filter p lst
 
 let rec check_duplicate (xs : string list) =
   match xs with

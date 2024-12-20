@@ -122,46 +122,41 @@ include struct
 
   let _ = compare
 
-  let rec (hash_fold_t : Ppx_base.state -> t -> Ppx_base.state) =
-    (fun hsv arg ->
-       match arg with
-       | T_unit -> Ppx_base.hash_fold_int hsv 0
-       | T_bool -> Ppx_base.hash_fold_int hsv 1
-       | T_byte -> Ppx_base.hash_fold_int hsv 2
-       | T_char -> Ppx_base.hash_fold_int hsv 3
-       | T_int -> Ppx_base.hash_fold_int hsv 4
-       | T_int64 -> Ppx_base.hash_fold_int hsv 5
-       | T_uint -> Ppx_base.hash_fold_int hsv 6
-       | T_uint64 -> Ppx_base.hash_fold_int hsv 7
-       | T_float -> Ppx_base.hash_fold_int hsv 8
-       | T_double -> Ppx_base.hash_fold_int hsv 9
-       | T_string -> Ppx_base.hash_fold_int hsv 10
-       | T_option -> Ppx_base.hash_fold_int hsv 11
-       | T_result -> Ppx_base.hash_fold_int hsv 12
-       | T_error_value_result -> Ppx_base.hash_fold_int hsv 13
-       | T_fixedarray -> Ppx_base.hash_fold_int hsv 14
-       | T_bytes -> Ppx_base.hash_fold_int hsv 15
-       | T_ref -> Ppx_base.hash_fold_int hsv 16
-       | T_error -> Ppx_base.hash_fold_int hsv 17
-       | Toplevel _ir ->
-           let hsv = Ppx_base.hash_fold_int hsv 18 in
-           let hsv =
-             let hsv = hsv in
-             Ppx_base.hash_fold_string hsv _ir.pkg
-           in
-           Ppx_base.hash_fold_string hsv _ir.id
-       | Tuple _a0 ->
-           let hsv = Ppx_base.hash_fold_int hsv 19 in
-           let hsv = hsv in
-           Ppx_base.hash_fold_int hsv _a0
-       | Constr _ir ->
-           let hsv = Ppx_base.hash_fold_int hsv 20 in
-           let hsv =
-             let hsv = hsv in
-             hash_fold_t hsv _ir.ty
-           in
-           Constr_info.hash_fold_constr_tag hsv _ir.tag
-      : Ppx_base.state -> t -> Ppx_base.state)
+  let rec hash_fold_t hsv arg =
+    match arg with
+    | T_unit -> Ppx_base.hash_fold_int hsv 0
+    | T_bool -> Ppx_base.hash_fold_int hsv 1
+    | T_byte -> Ppx_base.hash_fold_int hsv 2
+    | T_char -> Ppx_base.hash_fold_int hsv 3
+    | T_int -> Ppx_base.hash_fold_int hsv 4
+    | T_int64 -> Ppx_base.hash_fold_int hsv 5
+    | T_uint -> Ppx_base.hash_fold_int hsv 6
+    | T_uint64 -> Ppx_base.hash_fold_int hsv 7
+    | T_float -> Ppx_base.hash_fold_int hsv 8
+    | T_double -> Ppx_base.hash_fold_int hsv 9
+    | T_string -> Ppx_base.hash_fold_int hsv 10
+    | T_option -> Ppx_base.hash_fold_int hsv 11
+    | T_result -> Ppx_base.hash_fold_int hsv 12
+    | T_error_value_result -> Ppx_base.hash_fold_int hsv 13
+    | T_fixedarray -> Ppx_base.hash_fold_int hsv 14
+    | T_bytes -> Ppx_base.hash_fold_int hsv 15
+    | T_ref -> Ppx_base.hash_fold_int hsv 16
+    | T_error -> Ppx_base.hash_fold_int hsv 17
+    | Toplevel _ir ->
+        let hsv = Ppx_base.hash_fold_int hsv 18 in
+        let hsv =
+          let hsv = hsv in
+          Ppx_base.hash_fold_string hsv _ir.pkg
+        in
+        Ppx_base.hash_fold_string hsv _ir.id
+    | Tuple _a0 ->
+        let hsv = Ppx_base.hash_fold_int hsv 19 in
+        let hsv = hsv in
+        Ppx_base.hash_fold_int hsv _a0
+    | Constr _ir ->
+        let hsv = Ppx_base.hash_fold_int hsv 20 in
+        let hsv = hash_fold_t hsv _ir.ty in
+        Constr_info.hash_fold_constr_tag hsv _ir.tag
 
   and (hash : t -> Ppx_base.hash_value) =
     let func arg =
@@ -306,20 +301,8 @@ let sexp_of_t t =
 
 let toplevel_type ~pkg t = Toplevel { pkg; id = t }
 let constr ~ty ~tag = Constr { ty; tag }
-let tuple_2 = Tuple 2
-let tuple_3 = Tuple 3
-let tuple_4 = Tuple 4
-let tuple_5 = Tuple 5
-let tuple_6 = Tuple 6
 
-let tuple n =
-  match n with
-  | 2 -> tuple_2
-  | 3 -> tuple_3
-  | 4 -> tuple_4
-  | 5 -> tuple_5
-  | 6 -> tuple_6
-  | _ -> Tuple n
+let tuple n = Tuple n
 
 let rec get_pkg t =
   match t with

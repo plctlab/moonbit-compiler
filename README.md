@@ -27,7 +27,7 @@ Building a programming language is a long journey. It took Rust 9 years and Go 5
 - OCaml 4.14.2
 - [OPAM](https://opam.ocaml.org/)
 
-You must update MoonBit to the latest version. Otherwise, `moonc` can fail with segmentation fault, since the binaries of the language core is not compatible.
+You must update or revert MoonBit to [this version](https://github.com/moonbitlang/core/commit/4660d8b3da6ed79e47462d66d40feff177060699), as the syntax of the language has changed since.
 
 ### Build
 
@@ -39,27 +39,52 @@ opam install -y dune
 dune build -p moonbit-lang
 ```
 
+You would also need to build the core library, as instructed in the following section.
+
 ### Usage
 
-MoonBit's core library is typically installed in `~/.moon/lib/core/`. In following commands, we use `$core` to denote the path. Under `$core/target`, there are folders containing pre-built libraries under different targets: `js`, `wasm` and `wasm-gc`. Let `$target` stand for one of these three.
+MoonBit's core library is typically installed in `~/.moon/lib/core/`. In following commands, we use `$core` to denote the path. The language is shipped with pre-built libraries under different targets: `js`, `wasm` and `wasm-gc`; however, this compiler currently supports only `wasm-gc`. Let `$target` stand for this value.
 
 We use `$src` to denote the path to your main package. This package must contain, along with your source files, a `moon.pkg.json`; if you're not sure how this works, you can use [moon](https://github.com/moonbitlang/moon) to initialize a MoonBit repository.
 
-We use `$obj` to indicate path where object files should be generated; they typically carry a suffix `.core`. We use `$dest` to represent target files, which might be `.js` or `.wasm` according to your target choice.
+We use `$obj` to indicate path where object files should be generated; they typically carry suffixes `.core` and `.mi`.
 
-Compile files with these commands:
+We use `$dest` to represent target files, which might be `.wat` or `.wasm`, but no other choices are allowed.
+
+To set up the environment, execute these commands (you only need to do it once):
+
+```bash
+# Remove currently installed MoonBit version
+rm -rf $core
+
+# Install the specific version required by the compiler
+git clone https://github.com/moonbitlang/core.git $core
+git checkout 4660d8b
+
+# Compile the core library
+moon bundle --source-dir $core
+```
+
+We strongly recommend that you build the core library yourself via the commands above. The pre-built binaries are not always compatible with this compiler, as MoonBit is still under development.
+
+You should verify that there is a folder called `wasm-gc` under `$core/target`.
+
+Now you can compile `.mbt` files with these commands:
 
 ```bash
 bundled=$core/target/$target/release/bundle
 
 # Here, main.mbt should be a file containing `fn main`.
-moonc build-package $src/main.mbt -is-main -std-path $bundled -o $obj -target $target
+# `build-package` produces intermediate representation (IR); it is ignorant of target.
+moonc build-package $src/main.mbt -is-main -std-path $bundled -o $obj
 
 # If you have more than one package, remember to include all of them in -pkg-sources. They should be separated by colon ':'.
 moonc link-core $bundled/core.core $obj -o $dest -pkg-config-path $src/moon.pkg.json -pkg-sources $core:$src -target $target
 ```
 
 Then `$dest` would be available for use.
+
+In case you are still in doubt, refer to the output of `moon run --dry-run`.
 
 ## Contributing
 
@@ -68,7 +93,7 @@ The project is evolving extremely fast that it is not yet ready for massive comm
 If you do have interest in contributing, thank you!
 
 Please sign the [CLA](https://www.moonbitlang.com/cla/moonc) first.
-For small bug fixes, you are welcome to send the patch to [our email](mailto:jichuruanjian@idea.edu.cn). For large contributions, it is recommended to open a discussion first in our [community forum](https://discuss.moonbitlang.com). 
+For small bug fixes, you are welcome to send the patch to [our email](mailto:jichuruanjian@idea.edu.cn). For large contributions, it is recommended to open a discussion first in our [community forum](https://discuss.moonbitlang.com).
 
 ## LICENSE
 
@@ -89,5 +114,5 @@ In the past two years, our team worked hard to improve MoonBit and its toolchain
 
 We are grateful for the support of the community. 
 Special thanks to Jane Street for their excellent PPX libraries,
-this repo has used some of their [PPX functions](./src/hash.c).
+for this repo has used some of their [PPX functions](./src/hash.c).
 

@@ -13,15 +13,20 @@
 *)
 
 
+(**
+S.ml is related to S-expression. See https://en.wikipedia.org/wiki/S-expression for more detail.
+
+For an intuitive explanation, S-expression is a Lisp-like language.
+
+It consists of either an "Atom" like `x`, `y` or `z`, or a "List" like (x y) or (x y z). We can always limit Lists to be of length 2, as (x y z) can be easily parsed as ((x y) z), but this approach is not taken here.
+*)
 type t = Atom of string | List of t list
 
 let rec equal (x : t) (y : t) =
-  match x with
-  | Atom x -> ( match y with Atom y -> x = y | _ -> false)
-  | List ls -> (
-      match y with
-      | List ly -> ( try List.for_all2 equal ls ly with _ -> false)
-      | _ -> false)
+  match x, y with
+  | Atom x, Atom y -> x = y
+  | List ls, List ly -> (try List.for_all2 equal ls ly with _ -> false)
+  | _ -> false
 
 let sexp_of_t (x : t) : t = x [@@dead "+sexp_of_t"]
 

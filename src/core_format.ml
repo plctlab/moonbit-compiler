@@ -234,7 +234,7 @@ let import ~(path : string) : t array =
   try
     In_channel.with_open_bin path (fun ic ->
         Stdlib.In_channel.input_all ic |> of_string)
-  with Sys_error msg ->
+  with Sys_error _ ->
     raise (Arg.Bad ("cannot open file: " ^ path))
 
 let dump_serialized_from_t (t : t array) : S.t =
@@ -260,7 +260,7 @@ let bundle ~inputs ~path =
                | Some s when String.equal s magic_str ->
                    (Marshal.from_channel ic : serialized array)
                | _ -> (raise (Arg.Bad ("invalid MoonBit object file: " ^ path))))
-          with Sys_error msg ->
+          with Sys_error _ ->
             raise (Arg.Bad ("cannot open file: " ^ path)))
     |> Array.concat
   in

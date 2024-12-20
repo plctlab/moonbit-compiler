@@ -96,10 +96,10 @@ module Linkcore_Opt = struct
         " output plain style wat" );
       ( "-target",
         Arg.Symbol
-          ( [ "wasm-gc"; "wasm"; "js"; "native" ],
+          ( [ "wasm-gc"; "wasm"; "js"; "riscv" ],
             fun target -> Config.target := Basic_config.parse_target_exn target
           ),
-        "set compilation target. available targets: wasm, wasm-gc, js, native"
+        "set compilation target. available targets: wasm, wasm-gc, js, riscv"
       );
       ("-no-dts", Arg.Clear emit_dts, "Do not emit typescript declaration file");
       ( "-js-format",
