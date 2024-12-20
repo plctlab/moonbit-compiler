@@ -208,6 +208,7 @@ let link_core () =
     Io.write !output_file (riscv_gen sexp)
   in
 
+
   let target =
     match !Config.target with
     | Wasm_gc ->
