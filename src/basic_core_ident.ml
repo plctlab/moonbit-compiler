@@ -28,34 +28,22 @@ module Key = struct
   include struct
     let _ = fun (_ : t) -> ()
 
-    let (hash_fold_t : Ppx_base.state -> t -> Ppx_base.state) =
-      (fun hsv arg ->
-         match arg with
-         | Pdot _a0 ->
-             let hsv = Ppx_base.hash_fold_int hsv 0 in
-             let hsv = hsv in
-             Qual_ident.hash_fold_t hsv _a0
-         | Plocal_method _a0 ->
-             let hsv = Ppx_base.hash_fold_int hsv 1 in
-             let hsv = hsv in
-             Ident.hash_fold_local_method hsv _a0
-         | Pident _ir ->
-             let hsv = Ppx_base.hash_fold_int hsv 2 in
-             let hsv =
-               let hsv = hsv in
-               Ppx_base.hash_fold_int hsv _ir.stamp
-             in
-             hsv
-         | Pmutable_ident _ir ->
-             let hsv = Ppx_base.hash_fold_int hsv 3 in
-             let hsv =
-               let hsv = hsv in
-               Ppx_base.hash_fold_int hsv _ir.stamp
-             in
-             hsv
-        : Ppx_base.state -> t -> Ppx_base.state)
-
-    let _ = hash_fold_t
+    let hash_fold_t hsv arg =
+      match arg with
+      | Pdot _a0 ->
+          let hsv = Ppx_base.hash_fold_int hsv 0 in
+          Qual_ident.hash_fold_t hsv _a0
+      | Plocal_method _a0 ->
+          let hsv = Ppx_base.hash_fold_int hsv 1 in
+          Ident.hash_fold_local_method hsv _a0
+      | Pident _ir ->
+          let hsv = Ppx_base.hash_fold_int hsv 2 in
+          let hsv = Ppx_base.hash_fold_int hsv _ir.stamp in
+          hsv
+      | Pmutable_ident _ir ->
+          let hsv = Ppx_base.hash_fold_int hsv 3 in
+          let hsv = Ppx_base.hash_fold_int hsv _ir.stamp in
+          hsv
 
     let (hash : t -> Ppx_base.hash_value) =
       let func arg =
@@ -65,52 +53,40 @@ module Key = struct
       in
       fun x -> func x
 
-    let _ = hash
+    let equal a b =
+      if a == b then true
+      else match (a, b) with
+      | Pdot x, Pdot y -> Qual_ident.equal x y
+      | Pdot _, _ -> false
+      | _, Pdot _ -> false
+      | Plocal_method x, Plocal_method y ->
+          Ident.equal_local_method x y
+      | Plocal_method _, _ -> false
+      | _, Plocal_method _ -> false
+      | Pident x, Pident y ->
+          x.stamp = y.stamp
+      | Pident _, _ -> false
+      | _, Pident _ -> false
+      | Pmutable_ident x, Pmutable_ident y ->
+          x.stamp = y.stamp
 
-    let equal =
-      (fun a__001_ b__002_ ->
-         if Stdlib.( == ) a__001_ b__002_ then true
-         else
-           match (a__001_, b__002_) with
-           | Pdot _a__003_, Pdot _b__004_ -> Qual_ident.equal _a__003_ _b__004_
-           | Pdot _, _ -> false
-           | _, Pdot _ -> false
-           | Plocal_method _a__005_, Plocal_method _b__006_ ->
-               Ident.equal_local_method _a__005_ _b__006_
-           | Plocal_method _, _ -> false
-           | _, Plocal_method _ -> false
-           | Pident _a__007_, Pident _b__008_ ->
-               Stdlib.( = ) (_a__007_.stamp : int) _b__008_.stamp
-           | Pident _, _ -> false
-           | _, Pident _ -> false
-           | Pmutable_ident _a__009_, Pmutable_ident _b__010_ ->
-               Stdlib.( = ) (_a__009_.stamp : int) _b__010_.stamp
-        : t -> t -> bool)
-
-    let _ = equal
-
-    let compare =
-      (fun a__011_ b__012_ ->
-         if Stdlib.( == ) a__011_ b__012_ then 0
-         else
-           match (a__011_, b__012_) with
-           | Pdot _a__013_, Pdot _b__014_ ->
-               Qual_ident.compare _a__013_ _b__014_
-           | Pdot _, _ -> -1
-           | _, Pdot _ -> 1
-           | Plocal_method _a__015_, Plocal_method _b__016_ ->
-               Ident.compare_local_method _a__015_ _b__016_
-           | Plocal_method _, _ -> -1
-           | _, Plocal_method _ -> 1
-           | Pident _a__017_, Pident _b__018_ ->
-               Stdlib.compare (_a__017_.stamp : int) _b__018_.stamp
-           | Pident _, _ -> -1
-           | _, Pident _ -> 1
-           | Pmutable_ident _a__019_, Pmutable_ident _b__020_ ->
-               Stdlib.compare (_a__019_.stamp : int) _b__020_.stamp
-        : t -> t -> int)
-
-    let _ = compare
+    let compare a b =
+      if a == b then 0
+      else match (a, b) with
+      | Pdot x, Pdot y ->
+          Qual_ident.compare x y
+      | Pdot _, _ -> -1
+      | _, Pdot _ -> 1
+      | Plocal_method x, Plocal_method y ->
+          Ident.compare_local_method x y
+      | Plocal_method _, _ -> -1
+      | _, Plocal_method _ -> 1
+      | Pident x, Pident y ->
+          Stdlib.compare x.stamp y.stamp
+      | Pident _, _ -> -1
+      | _, Pident _ -> 1
+      | Pmutable_ident x, Pmutable_ident y ->
+          Stdlib.compare x.stamp y.stamp
   end
 
   let to_string (x : t) =

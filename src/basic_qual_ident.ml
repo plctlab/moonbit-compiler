@@ -12,11 +12,14 @@
    <https://www.moonbitlang.com/licenses/moonbit-public-source-license-v1>.
 *)
 
-
 module Type_path = Basic_type_path
 module Config = Basic_config
 module Strutil = Basic_strutil
 
+(**
+Qual ident stands for qualified identifier.
+In other words, an identifier like `@immut/hashmap.T`.
+*)
 type t =
   | Qregular of { pkg : string; name : string }
   | Qregular_implicit_pkg of { pkg : string; name : string }
