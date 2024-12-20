@@ -277,7 +277,9 @@ let extract_tpath t =
   | _ -> None
 
 let extract_tpath_exn t =
-  match extract_tpath t with Some p -> p | None -> failwith __FUNCTION__
+  match extract_tpath t with
+  | Some p -> p
+  | None -> print_endline "bad"; failwith __FUNCTION__
 
 let arity_of_typ t =
   match t with

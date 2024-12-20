@@ -51,7 +51,10 @@ let parse ~diagnostics ~(debug_tokens : bool) (input : mbt_input) :
     Parsing_parse.output =
   match input with
   | File_Path path ->
-      Parsing_parse.parse ~diagnostics ~debug_tokens ~transform:false path
+      (try
+        Parsing_parse.parse ~diagnostics ~debug_tokens ~transform:false path
+      with Sys_error _ ->
+        raise (Arg.Bad ("cannot open file: " ^ path)))
   | Name_Content (name, content) ->
       Parsing_parse.impl_of_string ~name ~debug_tokens ~diagnostics
         ~transform:false content
@@ -230,13 +233,11 @@ let clam_of_mcore ~(elim_unused_let : bool) (core : Mcore.t) ~clam_callback :
        Pass_unused_let.unused_let_opt
   |-> clam_callback `Clam_End
 
-let wasm_gen ~(elim_unused_let : bool) (core : Mcore.t) ~(target : target) =
-  match target with
-  | Wasm_gc { clam_callback; _ } ->
-      core
-      |> clam_of_mcore ~elim_unused_let ~clam_callback
-      |> Wasm_of_clam_gc.compile
-      |> fun sexp -> Wat sexp
+let wasm_gen ~(elim_unused_let : bool) (core : Mcore.t) ~clam_callback =
+  core
+  |> clam_of_mcore ~elim_unused_let ~clam_callback
+  |> Wasm_of_clam_gc.compile
+  |> fun sexp -> Wat sexp
 
 let link_core ~(shrink_wasm : bool) ~(elim_unused_let : bool)
     ~(core_inputs : core_input Basic_vec.t)
@@ -255,8 +256,8 @@ let link_core ~(shrink_wasm : bool) ~(elim_unused_let : bool)
         (Exported_functions.Export_selected exported_functions)
   in
   match target with
-  | Wasm_gc { sexp_callback; _ } -> (
-      let mod_and_callback = mono_core |> wasm_gen ~elim_unused_let ~target in
+  | Wasm_gc { sexp_callback; clam_callback } -> (
+      let mod_and_callback = mono_core |> wasm_gen ~elim_unused_let ~clam_callback in
       match mod_and_callback with
       | Wat sexp ->
           (if shrink_wasm then Pass_shrink_wasm.shrink sexp else sexp)

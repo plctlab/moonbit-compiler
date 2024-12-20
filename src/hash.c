@@ -21,9 +21,16 @@
    SOFTWARE.
 */
 
-// copied from [https://github.com/janestreet/base/blob/master/hash_types/src/internalhash_stubs.c]
+/*
+ * Initially copied from [https://github.com/janestreet/base/blob/master/hash_types/src/internalhash_stubs.c]
+ */
 
 #include <stdint.h>
+
+/*
+ * These headers are typically under /usr/lib/ocaml, if you install ocaml in the default way.
+ * Don't worry, Dune will sort them right.
+ */
 #include <caml/mlvalues.h>
 #include <caml/hash.h>
 

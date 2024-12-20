@@ -231,10 +231,11 @@ let of_string (bin : string) : t array =
   else assert false
 
 let import ~(path : string) : t array =
-  if Sys.file_exists path then
+  try
     In_channel.with_open_bin path (fun ic ->
         Stdlib.In_channel.input_all ic |> of_string)
-  else failwith (path ^ " not found")
+  with Sys_error _ ->
+    raise (Arg.Bad ("cannot open file: " ^ path))
 
 let dump_serialized_from_t (t : t array) : S.t =
   let t_to_serialized (t : t) : serialized =
@@ -253,11 +254,14 @@ let bundle ~inputs ~path =
   let pkgs =
     inputs
     |> List.map (fun path ->
-           In_channel.with_open_bin path (fun ic ->
+          try
+            In_channel.with_open_bin path (fun ic ->
                match Basic_config.input_magic_str ic with
                | Some s when String.equal s magic_str ->
                    (Marshal.from_channel ic : serialized array)
-               | _ -> failwith "invalid MoonBit object file"))
+               | _ -> (raise (Arg.Bad ("invalid MoonBit object file: " ^ path))))
+          with Sys_error _ ->
+            raise (Arg.Bad ("cannot open file: " ^ path)))
     |> Array.concat
   in
   Out_channel.with_open_bin path (fun oc ->

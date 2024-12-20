@@ -18,38 +18,31 @@ module Map_string = Basic_map_string
 type target = Wasm_gc
 
 include struct
-  let _ = fun (_ : target) -> ()
-  let sexp_of_target = (function Wasm_gc -> S.Atom "Wasm_gc" : target -> S.t)
-  let _ = sexp_of_target
+  let sexp_of_target target = match target with
+  | Wasm_gc -> S.Atom "Wasm_gc"
 
-  let (hash_fold_target : Ppx_base.state -> target -> Ppx_base.state) =
-    (fun hsv arg -> Ppx_base.hash_fold_int hsv (match arg with Wasm_gc -> 1)
-      : Ppx_base.state -> target -> Ppx_base.state)
+  let hash_fold_target hsv arg =
+    Ppx_base.hash_fold_int hsv (match arg with
+    | Wasm_gc -> 1)
 
-  let _ = hash_fold_target
-
-  let (hash_target : target -> Ppx_base.hash_value) =
-    let func arg =
+  let hash_target arg =
       Ppx_base.get_hash_value
-        (let hsv = Ppx_base.create () in
-         hash_fold_target hsv arg)
-    in
-    fun x -> func x
+        (let hsv = Ppx_base.create () in hash_fold_target hsv arg)
 
-  let _ = hash_target
   let equal_target = (Stdlib.( = ) : target -> target -> bool)
-  let _ = equal_target
 end
 
 type js_format = Esm | Cjs | Iife
 type error_format = Human | Json
 
-let parse_target_exn = function "wasm-gc" -> Wasm_gc | _ -> assert false
+let parse_target_exn = function
+  | "wasm-gc" -> Wasm_gc
+  | other -> raise (Arg.Bad ("unsupported target: " ^ other))
 
 let parse_error_format_exn = function
   | "human" -> Human
   | "json" -> Json
-  | _ -> assert false
+  | other -> raise (Arg.Bad ("unsupported parse error format: " ^ other))
 
 let mi_magic_str = "MINTF230520"
 let core_magic_str = "MCORE240123"

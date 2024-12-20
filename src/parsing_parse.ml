@@ -123,6 +123,9 @@ let impl_of_string ~diagnostics ?name ?(debug_tokens = false) ?directive_handler
 
 let parse ~diagnostics ?(debug_tokens = false) ?directive_handler ~transform
     path =
-  In_channel.with_open_bin path In_channel.input_all
-  |> impl_of_string ~diagnostics ~debug_tokens ~transform ?directive_handler
-       ~name:(Filename.basename path)
+  try
+    In_channel.with_open_bin path In_channel.input_all
+    |> impl_of_string ~diagnostics ~debug_tokens ~transform ?directive_handler
+        ~name:(Filename.basename path)
+  with Sys_error _ ->
+    raise (Arg.Bad ("cannot open file: " ^ path))

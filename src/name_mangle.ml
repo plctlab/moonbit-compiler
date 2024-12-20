@@ -59,9 +59,8 @@ let make_type_name (t : Mtype.t) : Tid.t =
         buf +>> "UnsafeMaybeUninit<";
         go t;
         buf +>> ">"
-    | T_error_value_result { id } -> (
-        match !Basic_config.target with
-        | Wasm_gc -> buf +>> Mtype.id_to_string id)
+    | T_error_value_result { id } ->
+        buf +>> Mtype.id_to_string id
   and gos (sep : char) = function
     | [] -> ()
     | ty :: [] -> go ty
