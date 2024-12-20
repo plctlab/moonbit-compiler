@@ -235,8 +235,7 @@ let serialized_of_pkg_info (mi_view : Pkg_info.mi_view) : Serialize.serialized =
     name = mi_view.name;
   }
 
-let pkg_info_of_serialized (pkg_info : Serialize.serialized) : Pkg_info.mi_view
-    =
+let pkg_info_of_serialized (pkg_info: Serialize.serialized): Pkg_info.mi_view =
   let external_constrs = Hash_string.create 17 in
   Arr.iter pkg_info.export_types (fun (_, ty_decl) ->
       match ty_decl.ty_desc with

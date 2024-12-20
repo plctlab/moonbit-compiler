@@ -18,9 +18,7 @@ module Config = Basic_config
 module Parse = Parsing_parse
 module Lst = Basic_lst
 
-let ( |-> ) obj callback =
-  callback obj;
-  obj
+let ( |-> ) obj callback = callback obj; obj
 
 let rec make_directory dir =
   if Sys.file_exists dir then ()
@@ -48,9 +46,15 @@ let check_usage = "moonc check [options] <input files>"
 let compile_usage = "moonc compile [options] <input file>"
 let gen_test_info_usage = "moonc gen-test-info [options] <input files>"
 let postprocess_ast = Driver_util.postprocess_ast ~diagnostics
+
+(**
+Converts a string into S-expression and write it in a file.
+
+See s.ml for more about S-expressions.
+*)
 let write_s name sexp = if not !no_intermediate_file then Io.write_s name sexp
 
-(* TAST here stands for typed AST *)
+(** TAST stands for typed AST. *)
 let tast_of_ast ~name ~build_context (asts : Parse.output list) :
     Typedtree.output * Global_env.t =
   let write_opt suffix sexp = write_s (name ^ suffix) sexp in
@@ -99,13 +103,7 @@ let wasm_gen ~(name : string) c =
     | `Clam_Unused_Let -> write_opt ".unused_let.clam" (Clam.sexp_of_prog clam)
     | `Clam_End -> write_s (name ^ ".o.clam") (Clam.sexp_of_prog clam)
   in
-
-  let target =
-    match !Config.target with
-    | Wasm_gc ->
-        Driver_util.Wasm_gc { clam_callback; sexp_callback = (fun _ -> ()) }
-  in
-  Driver_util.wasm_gen ~elim_unused_let:!elim_unused_let c ~target
+  Driver_util.wasm_gen ~elim_unused_let:!elim_unused_let c ~clam_callback
 
 let source_loader ~pkg file =
   let path = Pkg_path_tbl.resolve_source Loc.pkg_path_tbl ~pkg ~file in
@@ -140,10 +138,13 @@ let wat_gen (sexp : W.t list) =
            ~ignores:
              [ "source_name"; "source_pos"; "source_type"; "prologue_end" ]
            s);
-      Lst.iter ss (fun s ->
+      List.iter (fun s ->
           Buffer.add_string buf "\n";
-          Buffer.add_string buf (W.to_string s)));
+          Buffer.add_string buf (W.to_string s)) ss);
   Buffer.contents buf
+
+let riscv_gen (sexp : Riscv.t list) =
+  List.map Riscv.to_asm_string sexp |> String.concat "\n"
 
 let bundle_core () =
   let output_file = ref "" in
@@ -164,39 +165,55 @@ let link_core () =
   let input_files : Driver_util.core_input Basic_vec.t = Basic_vec.empty () in
   let exported_functions = Driver_config.Linkcore_Opt.exported_functions in
   let link_core_spec = Driver_config.Linkcore_Opt.spec in
+
+  (* Parse argument and check input validity *)
   Arg.parse_argv ~current:(ref 1) Sys.argv link_core_spec
     (fun input_file ->
       Basic_vec.push input_files (Driver_util.Core_Path input_file))
     link_core_usage;
+  
   if Basic_vec.is_empty input_files && !output_file = "" then (
     Arg.usage link_core_spec link_core_usage;
     exit 0);
+
+  if !output_file = "" then (
+    raise (Arg.Bad ("output file unspecified"))
+  );
+
+  (* Load config file *)
   Basic_config.current_package := !link_main;
-  (if Sys.file_exists !pkg_config_path then
-     let json_data =
-       Json_parse.parse_json_from_file ~diagnostics:(Diagnostics.make ())
-         ~fname:(Filename.basename !pkg_config_path)
-         !pkg_config_path
-     in
-     Pkg_config_util.link_core_load_pkg_config json_data);
+  if Sys.file_exists !pkg_config_path then
+     (let json_data =
+        Json_parse.parse_json_from_file ~diagnostics:(Diagnostics.make ())
+          ~fname:(Filename.basename !pkg_config_path)
+          !pkg_config_path
+      in Pkg_config_util.link_core_load_pkg_config json_data);
+
+
+  (* Generates target code *)
   let on_source_map blob = Io.write (!output_file ^ ".map") blob in
-  let sexp_callback sexp =
-    match !output_file with
-    | "" ->
-        prerr_string "unspecified output file";
-        exit 2
-    | filename ->
-        if Filename.check_suffix filename ".wat" then
-          Io.write filename (wat_gen sexp)
-        else if Filename.check_suffix filename ".wasm" then
-          Io.write filename
-            (wasm_bin_gen ~file:filename ~on_source_map (Driver_util.Wat sexp))
-        else prerr_string (filename ^ ": unrecognized file type")
+  let wasm_gen_target sexp =
+    let filename = !output_file in
+    if Filename.check_suffix filename ".wat" then
+      Io.write filename (wat_gen sexp)
+    else if Filename.check_suffix filename ".wasm" then
+      Io.write filename
+        (wasm_bin_gen ~file:filename ~on_source_map (Driver_util.Wat sexp))
+    else raise (Arg.Bad ("unrecognized output file type: " ^ filename ^ "; must be one of .wat or .wasm"))
   in
+
+  let riscv_gen_target sexp =
+    (* No need to check file type as in wasm. *)
+    (* We will write RISC-V assembly anyway. *)
+    Io.write !output_file (riscv_gen sexp)
+  in
+
   let target =
     match !Config.target with
     | Wasm_gc ->
-        Driver_util.Wasm_gc { clam_callback = (fun _ _ -> ()); sexp_callback }
+        Driver_util.Wasm_gc { clam_callback = (fun _ _ -> ()); sexp_callback = wasm_gen_target }
+    | Riscv ->
+        Driver_util.Riscv { sexp_callback = riscv_gen_target }
   in
   Driver_util.link_core ~shrink_wasm:!shrink_wasm
     ~elim_unused_let:!elim_unused_let ~core_inputs:input_files
@@ -223,9 +240,9 @@ let build_package () =
   let pkg_name = !Basic_config.current_package in
   make_directory output_dir;
   let std_import = Driver_util.Std_Path !Basic_config.std_path in
-  let imports = Lst.map !mi_files (fun imp -> Driver_util.Import_Path imp) in
+  let imports = List.map (fun imp -> Driver_util.Import_Path imp) !mi_files in
   let mbt_files =
-    Lst.map !input_files (fun path -> Driver_util.File_Path path)
+    List.map (fun path -> Driver_util.File_Path path) !input_files
   in
   let profile_callback asts = asts in
   let debug_source_callback _ _ = ()
@@ -292,10 +309,8 @@ let check () =
   let output_dir = Filename.dirname !output_file in
   if not !no_mi then make_directory output_dir;
   let std_import = Driver_util.Std_Path !Basic_config.std_path in
-  let imports = Lst.map !mi_files (fun imp -> Driver_util.Import_Path imp) in
-  let mbt_files =
-    Lst.map !input_files (fun path -> Driver_util.File_Path path)
-  in
+  let imports = List.map (fun imp -> Driver_util.Import_Path imp) !mi_files in
+  let mbt_files = List.map (fun path -> Driver_util.File_Path path) !input_files in
   let genv_callback genv =
     if not !no_mi then
       Global_env.export_mi ~action:(Write_file !output_file)
@@ -424,6 +439,7 @@ let compile () =
       | Wasm_gc ->
           let mod_ = wasm_gen ~name mono_core in
           postprecess mod_
+      | Riscv -> failwith "TODO" (* TODO *)
     with Exit -> ()
   in
   Arg.parse_argv ~current:(ref 1) Sys.argv spec

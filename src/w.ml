@@ -12,16 +12,19 @@
    <https://www.moonbitlang.com/licenses/moonbit-public-source-license-v1>.
 *)
 
+(**
+This is representation of WASM.
 
+It is very similar to S-expressions (in s.ml), but there are subtle differences.
+Try `diff w.ml s.ml` to highlight them.
+*)
 type t = Atom of string | List of t list
 
 let rec equal (x : t) (y : t) =
-  match x with
-  | Atom x -> ( match y with Atom y -> x = y | _ -> false)
-  | List ls -> (
-      match y with
-      | List ly -> ( try List.for_all2 equal ls ly with _ -> false)
-      | _ -> false)
+  match x, y with
+  | Atom x, Atom y -> x = y
+  | List ls, List ly -> (try List.for_all2 equal ls ly with _ -> false)
+  | _ -> false
 
 let rec sexp_of_t = function
   | Atom s -> S.Atom s

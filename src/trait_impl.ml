@@ -67,16 +67,12 @@ module H = Basic_hashf.Make (struct
   type t = Type_path.t * Type_path.t
 
   include struct
-    let _ = fun (_ : t) -> ()
-
     let sexp_of_t =
       (fun (arg0__012_, arg1__013_) ->
          let res0__014_ = Type_path.sexp_of_t arg0__012_
          and res1__015_ = Type_path.sexp_of_t arg1__013_ in
          S.List [ res0__014_; res1__015_ ]
         : t -> S.t)
-
-    let _ = sexp_of_t
 
     let equal =
       (fun a__016_ b__017_ ->
@@ -87,26 +83,16 @@ module H = Basic_hashf.Make (struct
            (Type_path.equal t__019_ t__021_)
         : t -> t -> bool)
 
-    let _ = equal
-
-    let (hash_fold_t : Ppx_base.state -> t -> Ppx_base.state) =
-     fun hsv arg ->
-      let e0, e1 = arg in
+    let hash_fold_t hsv (e0, e1) =
       let hsv = Type_path.hash_fold_t hsv e0 in
       let hsv = Type_path.hash_fold_t hsv e1 in
       hsv
 
-    let _ = hash_fold_t
+    let hash arg =
+      Ppx_base.get_hash_value
+        (let hsv = Ppx_base.create () in
+          hash_fold_t hsv arg)
 
-    let (hash : t -> Ppx_base.hash_value) =
-      let func arg =
-        Ppx_base.get_hash_value
-          (let hsv = Ppx_base.create () in
-           hash_fold_t hsv arg)
-      in
-      fun x -> func x
-
-    let _ = hash
   end
 end)
 
