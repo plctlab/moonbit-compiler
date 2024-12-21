@@ -636,14 +636,6 @@ let prim_table =
 let find_prim (name : string) : prim option =
   Hash_string.find_opt prim_table name
 
-let find_name prim =
-  let table = Basic_hash_gen.to_list prim_table in
-  let filtered = List.filter (fun (str, p) -> p = prim) table in
-  match filtered with
-  | [] -> None
-  | [(str, p)] -> Some str
-  | _ -> failwith "primitive.ml: duplicate intrinsics"
-
 let is_intrinsic (p : prim) = match p with Pintrinsic _ -> true | _ -> false
 
 let is_pure (prim : prim) =

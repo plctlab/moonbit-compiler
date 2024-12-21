@@ -20,9 +20,9 @@ module Lst = Basic_lst
 type id = string
 
 include struct
-  let _ = fun (_ : id) -> ()
+  
   let sexp_of_id = (Moon_sexp_conv.sexp_of_string : id -> S.t)
-  let _ = sexp_of_id
+
 end
 
 module Id_hash : Basic_hash_intf.S with type key = id = Basic_hash_string
@@ -123,7 +123,6 @@ let is_numeric (t : t) =
 type field_name = Named of string | Indexed of int
 
 include struct
-  let _ = fun (_ : field_name) -> ()
 
   let sexp_of_field_name =
     (function
@@ -135,14 +134,11 @@ include struct
          S.List [ S.Atom "Indexed"; res0__034_ ]
       : field_name -> S.t)
 
-  let _ = sexp_of_field_name
 end
 
 type field_info = { field_type : t; name : field_name; mut : bool }
 
 include struct
-  let _ = fun (_ : field_info) -> ()
-
   let sexp_of_field_info =
     (fun { field_type = field_type__036_; name = name__038_; mut = mut__040_ } ->
        let bnds__035_ = ([] : _ Stdlib.List.t) in
@@ -161,8 +157,6 @@ include struct
        in
        S.List bnds__035_
       : field_info -> S.t)
-
-  let _ = sexp_of_field_info
 end
 
 type constr_info = { payload : field_info list; tag : Tag.t }

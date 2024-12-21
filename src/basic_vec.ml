@@ -170,6 +170,10 @@ let push (d : 'a t) v =
     d.len <- d_len + 1;
     d.arr.!(d_len) <- v)
 
+(** Similar to push, but for a whole vector. *)
+let append vec other =
+  iter other (fun x -> push vec x)
+
 let insert (d : 'a t) idx elt =
   let enlarge size =
     if size >= Sys.max_array_length then failwith "exceeds max_array_length";
