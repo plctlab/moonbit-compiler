@@ -188,7 +188,7 @@ let insert (d : 'a t) idx elt =
   d.arr.(idx) <- elt;
   d.len <- d.len + 1
 
-let pop_no_compact (d : 'a t) : 'a option =
+let pop_opt (d : 'a t) : 'a option =
   let d_len = d.len in
   if d_len = 0 then None
   else
@@ -198,3 +198,14 @@ let pop_no_compact (d : 'a t) : 'a option =
     fill_with_junk_ d_arr last_index 1;
     d.len <- last_index;
     Some last
+
+let pop (d : 'a t) : 'a =
+  let d_len = d.len in
+  if d_len = 0 then failwith __FUNCTION__
+  else
+    let d_arr = d.arr in
+    let last_index = d_len - 1 in
+    let last = d_arr.!(last_index) in
+    fill_with_junk_ d_arr last_index 1;
+    d.len <- last_index;
+    last

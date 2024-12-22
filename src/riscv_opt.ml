@@ -3,6 +3,7 @@
 (** Instruction in SSA form; feel free to change it to anything you'd like *)
 type instruction = Riscv_ssa.t
 
+(** Note: `body` does not include the label before instructions. *)
 type basic_block = {
   body: instruction Basic_vec.t;
   succ: string Basic_vec.t;
@@ -40,11 +41,31 @@ let build_cfg fn body =
   let name = ref fn in
   let vec = ref (Basic_vec.make ~dummy:Riscv_ssa.Nop 16) in
 
+  (* There might be multiple jumps at end of each basic block. *)
+  (* Clean them up. *)
+  let tidy (vec: instruction Basic_vec.t) = 
+    let rec iter () =
+      let len = Basic_vec.length vec in
+      if len <= 1 then ()
+
+      (* Check penultimate instruction, and pop the last according to it *)
+      else let x = Basic_vec.get vec (len - 2) in
+      match x with
+      | Jump _ -> Basic_vec.pop vec |> ignore; iter ()
+      | Branch _ -> Basic_vec.pop vec |> ignore; iter ()
+      | Return _ -> Basic_vec.pop vec |> ignore; iter ()
+      | _ -> ()
+    in
+    iter ();
+    vec
+  in
+
   let separate_basic_block (inst: instruction) = 
     (match inst with
     | Label label ->
         Hashtbl.add basic_blocks !name (make ());
-        Basic_vec.append (block_of !name).body (!vec);
+        Basic_vec.append (block_of !name).body (tidy !vec);
+
         (* Clear the instructions; Basic_vec does not offer clear() or something alike *)
         vec := Basic_vec.make ~dummy:Riscv_ssa.Nop 16;
         name := label
@@ -67,8 +88,8 @@ let build_cfg fn body =
   (* i.e. only the last instruction can be jump/branch/return. *)
   (* So we just look at them. *)
   let rec find_succ name =
-    if not (Hashtbl.mem basic_blocks name) then
-      let block = block_of name in 
+    let block = block_of name in 
+    if Basic_vec.is_empty block.succ then
       let successors =
         (match Basic_vec.last block.body with
         | Jump target -> [target]
@@ -136,7 +157,7 @@ let liveness_analysis fn =
 
   (* Keep doing until reaches fixed point *)
   let rec iterate worklist =
-    let last_item = Basic_vec.pop_no_compact worklist in
+    let last_item = Basic_vec.pop_opt worklist in
     match last_item with
     | None -> ()
     | Some fn -> 
@@ -174,3 +195,26 @@ let liveness_analysis fn =
   iterate (Hashtbl.find exit_fn fn);
   
   live_out
+
+let ssa_of_cfg fn = 
+  let inst = Basic_vec.empty () in
+  let visited = ref Varset.empty in
+  let rec get_blocks x =
+    if not (Varset.mem x !visited) then
+      let block = block_of x in
+
+      (* Body does not contain labels; *)
+      (* Fill it in here *)
+      Basic_vec.push inst (Riscv_ssa.Label x);
+      Basic_vec.append inst block.body;
+      visited := Varset.add x !visited;
+      Basic_vec.iter block.succ get_blocks
+  in
+  get_blocks fn;
+  inst |> Basic_vec.to_list
+
+let opt ssa =
+  visit_fn build_cfg ssa;
+  let s = map_fn ssa_of_cfg ssa in
+  Basic_io.write "core.ssa" (String.concat "\n" (List.map Riscv_ssa.to_string s));
+  s

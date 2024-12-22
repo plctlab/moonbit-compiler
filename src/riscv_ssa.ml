@@ -369,14 +369,10 @@ let rec reg_map fd fs t = match t with
 
 (** Variables that has been accessed in this instruction. *)
 let use t =
-  (* Special care for phi. We'll take care of it in riscv_opt.ml. *)
-  match t with
-  | Phi _ -> []
-  | _ ->
-      let result = ref [] in
-      let fs = (fun x -> result := x :: !result; unit) in
-      reg_map (fun _ -> unit) fs t |> ignore;
-      !result
+  let result = ref [] in
+  let fs = (fun x -> result := x :: !result; unit) in
+  reg_map (fun _ -> unit) fs t |> ignore;
+  !result
 
 (** The variable defined in the instruction. *)
 let def t =
@@ -426,6 +422,8 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       | true, Neg, [rs1] -> (FNeg { rd; rs1 })
       | _ -> die ()) in
       Basic_vec.push ssa op
+
+  | Pignore -> ()
   
   | _ -> Basic_vec.push ssa (Call { rd; fn = (Primitive.sexp_of_prim prim |> S.to_string); args })
 
@@ -495,10 +493,56 @@ let rec do_convert ssa (expr: Mcore.expr) =
   (* We tidy some of these up, and compile others into functions. *)
   | Cexpr_prim { prim; args; ty; _ } ->
       let rd = new_temp ty in
-      let args = List.map (fun expr -> do_convert ssa expr) args in
-      (* TODO: take special care with Psequand and Psequor. *)
-      (* They are short-circuited and should be compiled into if-else. *)
-      deal_with_prim ssa rd prim args;
+      (match prim, args with
+      | Psequand, [rs1; rs2] ->
+          (* Short circuiting, compile into if-else *)
+          (* rd = rs1 && rs2 -> rd = if (rs1) rs2 else false *)
+          let ifso = new_label "sequand_if_" in
+          let ifnot = new_label "sequand_else_" in
+          let ifexit = new_label "sequand_exit_" in
+          let t1 = new_temp Mtype.T_bool in
+          let t2 = new_temp Mtype.T_bool in
+          let cond = do_convert ssa rs1 in
+          Basic_vec.push ssa (Branch { cond; ifso; ifnot });
+
+          Basic_vec.push ssa (Label ifso);
+          let rs = do_convert ssa rs2 in
+          Basic_vec.push ssa (Assign { rd = t1; rs });
+          Basic_vec.push ssa (Jump ifexit);
+
+          Basic_vec.push ssa (Label ifnot);
+          Basic_vec.push ssa (AssignInt { rd = t2; imm = 0L; size = Bit8; signed = true });
+          Basic_vec.push ssa (Jump ifexit);
+
+          Basic_vec.push ssa (Label ifexit);
+          Basic_vec.push ssa (Phi { rd; rs = [(t1, ifso); (t2, ifnot) ]})
+
+      | Psequor, [rs1; rs2] ->
+          (* Short circuiting, compile into if-else *)
+          (* rd = rs1 || rs2 -> rd = if (rs1) true else rs2 *)
+          let ifso = new_label "sequor_if_" in
+          let ifnot = new_label "sequor_else_" in
+          let ifexit = new_label "sequor_exit_" in
+          let t1 = new_temp Mtype.T_bool in
+          let t2 = new_temp Mtype.T_bool in
+          let cond = do_convert ssa rs1 in
+          Basic_vec.push ssa (Branch { cond; ifso; ifnot });
+
+          Basic_vec.push ssa (Label ifso);
+          Basic_vec.push ssa (AssignInt { rd = t1; imm = 1L; size = Bit8; signed = true });
+          Basic_vec.push ssa (Jump ifexit);
+
+          Basic_vec.push ssa (Label ifnot);
+          let rs = do_convert ssa rs2 in
+          Basic_vec.push ssa (Assign { rd = t2; rs });
+          Basic_vec.push ssa (Jump ifexit);
+
+          Basic_vec.push ssa (Label ifexit);
+          Basic_vec.push ssa (Phi { rd; rs = [(t1, ifso); (t2, ifnot) ]})
+
+      | _ -> 
+          let args = List.map (fun expr -> do_convert ssa expr) args in
+          deal_with_prim ssa rd prim args);
       rd
 
   | Cexpr_let { name; rhs; body; _ } ->
@@ -740,8 +784,10 @@ let rec do_convert ssa (expr: Mcore.expr) =
       List.iter visit fields;
       rd
 
-  | Cexpr_break _ ->
-      prerr_endline "break";
+  | Cexpr_break { label; _ } ->
+      (* Jumps to exit of the loop. *)
+      let loop_name = Printf.sprintf "%s_%d" label.name label.stamp in
+      Basic_vec.push ssa (Jump ("exit_" ^ loop_name));
       unit
 
   | Cexpr_return _ ->
@@ -869,5 +915,4 @@ let ssa_of_mcore (core: Mcore.t) =
       
     | None -> body
   in
-  Basic_io.write "core.ssa" (String.concat "\n" (List.map to_string with_main));
   with_main
