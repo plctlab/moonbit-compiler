@@ -11,6 +11,7 @@ type var = {
 We store all discarded values (e.g. unit) into variable of this name.
 *)
 let discard = "_"
+let unit = { name = discard; ty = Mtype.T_unit }
 
 let to_string (r: var) = 
   Printf.sprintf "%s: %s" r.name (Mtype.to_string r.ty)
@@ -325,88 +326,64 @@ let rec sizeof ty =
   | _ -> failwith "riscv_ssa.ml: cannot calculate size"
 
 
-(** The variable defined in the instruction. *)
-let def t = match t with
-| Add { rd; _ } -> [rd]
-| Sub { rd; _ } -> [rd]
-| Mul { rd; _ } -> [rd]
-| Div { rd; _ } -> [rd]
-| Mod { rd; _ } -> [rd]
-| Less { rd; _ } -> [rd]
-| Leq { rd; _ } -> [rd]
-| Great { rd; _ } -> [rd]
-| Geq { rd; _ } -> [rd]
-| Eq { rd; _ } -> [rd]
-| Neq { rd; _ } -> [rd]
-| Neg { rd; _ } -> [rd]
-| FAdd { rd; _ } -> [rd]
-| FSub { rd; _ } -> [rd]
-| FMul { rd; _ } -> [rd]
-| FDiv { rd; _ } -> [rd]
-| FLess { rd; _ } -> [rd]
-| FLeq { rd; _ } -> [rd]
-| FGreat { rd; _ } -> [rd]
-| FGeq { rd; _ } -> [rd]
-| FEq { rd; _ } -> [rd]
-| FNeq { rd; _ } -> [rd]
-| FNeg { rd; _ } -> [rd]
-| Call { rd; _ } -> [rd]
-| AssignInt { rd; _ } -> [rd]
-| AssignFP { rd; _ } -> [rd]
-| AssignStr { rd; _ } -> [rd]
-| Assign { rd; _ } -> [rd]
-| Load { rd; _ } -> [rd]
-| Store _ -> []
-| Jump _ -> []
-| Branch _ -> []
-| Label _ -> []
-| Phi { rd; _ } -> [rd]
-| FnDecl _ -> []
-| Malloc { rd; _ } -> [rd]
-| Return _ -> []
-| Nop -> []
+(** Maps all result registers with `fd` and all operands with `fs`. *)
+let rec reg_map fd fs t = match t with
+| Add { rd; rs1; rs2; } -> Add { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Sub { rd; rs1; rs2; } -> Sub { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Mul { rd; rs1; rs2; } -> Mul { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Div { rd; rs1; rs2; } -> Div { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Mod { rd; rs1; rs2; } -> Mod { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Less { rd; rs1; rs2; } -> Less { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Leq { rd; rs1; rs2; } -> Leq { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Great { rd; rs1; rs2; } -> Great { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Geq { rd; rs1; rs2; } -> Geq { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Eq { rd; rs1; rs2; } -> Eq { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Neq { rd; rs1; rs2; } -> Neq { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Neg { rd; rs1 } -> Neg { rd = fd rd; rs1 = fs rs1 }
+| FAdd { rd; rs1; rs2; } -> FAdd { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| FSub { rd; rs1; rs2; } -> FSub { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| FMul { rd; rs1; rs2; } -> FMul { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| FDiv { rd; rs1; rs2; } -> FDiv { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| FLess { rd; rs1; rs2; } -> FLess { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| FLeq { rd; rs1; rs2; } -> FLeq { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| FGreat { rd; rs1; rs2; } -> FGreat { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| FGeq { rd; rs1; rs2; } -> FGeq { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| FEq { rd; rs1; rs2; } -> FEq { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| FNeq { rd; rs1; rs2; } -> FNeq { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| FNeg { rd; rs1 } -> FNeg { rd = fd rd; rs1 = fs rs1 }
+| Call { rd; fn; args } -> Call { rd = fd rd; fn; args = List.map fs args }
+| AssignInt { rd; imm; size; signed } -> AssignInt { rd = fd rd; imm; size; signed }
+| AssignFP { rd; imm; size } -> AssignFP { rd = fd rd; imm; size; }
+| AssignStr { rd; imm } -> AssignStr { rd = fd rd; imm; }
+| Assign { rd; rs } -> Assign { rd = fd rd; rs = fs rs }
+| Load { rd; rs; offset } -> Load { rd = fd rd; rs = fs rs; offset }
+| Store { rd; rs; offset } -> Load { rd = fs rd; rs = fs rs; offset }
+| Jump label -> Jump label
+| Branch { cond; ifso; ifnot } -> Branch { cond = fs cond; ifso; ifnot }
+| Label label -> Label label
+| Phi { rd; rs } -> Phi { rd = fd rd; rs = List.map (fun (x, name) -> (fs x, name)) rs }
+| FnDecl { fn; args; body } -> FnDecl { fn; args; body = List.map (fun x -> reg_map fd fs x) body } 
+| Malloc { rd; size } -> Malloc { rd = fd rd; size }
+| Return var -> Return (fs var)
+| Nop -> Nop
 
 (** Variables that has been accessed in this instruction. *)
-let use t = match t with
-| Add { rs1; rs2; _ } -> [rs1; rs2]
-| Sub { rs1; rs2; _ } -> [rs1; rs2]
-| Mul { rs1; rs2; _ } -> [rs1; rs2]
-| Div { rs1; rs2; _ } -> [rs1; rs2]
-| Mod { rs1; rs2; _ } -> [rs1; rs2]
-| Less { rs1; rs2; _ } -> [rs1; rs2]
-| Leq { rs1; rs2; _ } -> [rs1; rs2]
-| Great { rs1; rs2; _ } -> [rs1; rs2]
-| Geq { rs1; rs2; _ } -> [rs1; rs2]
-| Eq { rs1; rs2; _ } -> [rs1; rs2]
-| Neq { rs1; rs2; _ } -> [rs1; rs2]
-| Neg { rs1; _ } -> [rs1]
-| FAdd { rs1; rs2; _ } -> [rs1; rs2]
-| FSub { rs1; rs2; _ } -> [rs1; rs2]
-| FMul { rs1; rs2; _ } -> [rs1; rs2]
-| FDiv { rs1; rs2; _ } -> [rs1; rs2]
-| FLess { rs1; rs2; _ } -> [rs1; rs2]
-| FLeq { rs1; rs2; _ } -> [rs1; rs2]
-| FGreat { rs1; rs2; _ } -> [rs1; rs2]
-| FGeq { rs1; rs2; _ } -> [rs1; rs2]
-| FEq { rs1; rs2; _ } -> [rs1; rs2]
-| FNeq { rs1; rs2; _ } -> [rs1; rs2]
-| FNeg { rs1; _ } -> [rs1]
-| Call { args; _ } -> args
-| AssignInt _ -> []
-| AssignFP _ -> []
-| AssignStr _ -> []
-| Assign { rs; _ } -> [rs]
-| Load { rs; _ } -> [rs]
-| Store { rd; rs; _ } -> [rd; rs]
-| Jump _ -> []
-| Branch { cond; } -> [cond]
-| Label _ -> []
-| Phi { rs } -> List.map (fun (var, label) -> var) rs
-| FnDecl _ -> []
-| Malloc _ -> []
-| Return var -> [var]
-| Nop -> []
+let use t =
+  (* Special care for phi. We'll take care of it in riscv_opt.ml. *)
+  match t with
+  | Phi _ -> []
+  | _ ->
+      let result = ref [] in
+      let fs = (fun x -> result := x :: !result; unit) in
+      reg_map (fun _ -> unit) fs t |> ignore;
+      !result
 
+(** The variable defined in the instruction. *)
+let def t =
+  let result = ref [] in
+  let fd = (fun x -> result := x :: !result; unit) in
+  reg_map fd (fun _ -> unit) t |> ignore;
+  !result
 
 (** Push the correct sequence of instruction based on primitives. *)
 let deal_with_prim ssa rd (prim: Primitive.prim) args =
@@ -493,7 +470,7 @@ It returns the variable in which the result of the last instruction pushed is st
 let rec do_convert ssa (expr: Mcore.expr) =
   match expr with
   | Cexpr_unit _ ->
-      { name = discard; ty = Mtype.T_unit }
+      unit
   
   | Cexpr_var { id; ty; prim; _ } ->
       warn prim;
@@ -584,7 +561,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
     
     let offset = offsetof name pos in
     Basic_vec.push ssa (Store { rd; rs; offset; });
-    { name = discard; ty = Mtype.T_unit }
+    unit
 
   | Cexpr_if { cond; ifso; ifnot; ty; _ } ->
       let rd = new_temp ty in
@@ -597,7 +574,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let ifnot_ssa = Basic_vec.make ~dummy:Nop 20 in
       let ifnot_result =
         (match ifnot with
-        | None -> { name = discard; ty = Mtype.T_unit }
+        | None -> unit
         | Some x -> do_convert ifnot_ssa x
         )
       in
@@ -661,7 +638,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
     A good thing is that loops don't return a value. We don't need to insert
     φ after the label `exit`.
   *)
-  | Cexpr_loop { params; body; args; label; ty } ->
+  | Cexpr_loop { params; body; args; label; _ } ->
       (* We need to use the global variable `conts`. *)
       (* In case there's an outer loop, we might have tampered it; *)
       (* So we must store the contents somewhere. *)
@@ -714,8 +691,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
       (* Store `conts` back; let outer loop go on normally. *)
       conts := old_conts;
-
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   (* See the explanation for Cexpr_loop. *)
   | Cexpr_continue { args; label } ->
@@ -732,15 +708,14 @@ let rec do_convert ssa (expr: Mcore.expr) =
       (* Jump back to the beginning of the loop. *)
       let loop_name = Printf.sprintf "%s_%d" label.name label.stamp in 
       Basic_vec.push ssa (Jump loop_name);
-
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   (* Assigns mutable variables. *)
   | Cexpr_assign { var; expr; ty } ->
       let rd = do_convert ssa expr in
       let rs = { name = Ident.to_string var; ty = Mtype.T_bytes} in
       Basic_vec.push ssa (Store { rd; rs; offset = 0 });
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   (* Builds a record type. *)
   | Cexpr_record { fields; ty; } ->
@@ -767,51 +742,51 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
   | Cexpr_break _ ->
       prerr_endline "break";
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   | Cexpr_return _ ->
       prerr_endline "return";
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   | Cexpr_letfn _ ->
       prerr_endline "letfn";
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   | Cexpr_function _ ->
       prerr_endline "function";
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   | Cexpr_constr _ ->
       prerr_endline "constr";
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   | Cexpr_letrec _ ->
       prerr_endline "letrec";
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   | Cexpr_tuple _ ->
       prerr_endline "tuple";
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   | Cexpr_record_update _ ->
       prerr_endline "record_update";
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   | Cexpr_switch_constr _ ->
       prerr_endline "switch constr";
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   | Cexpr_switch_constant _ ->
       prerr_endline "switch constant";
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   | Cexpr_handle_error _ ->
       prerr_endline "handle error";
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   | Cexpr_array _ ->
       prerr_endline "array";
-      { name = discard; ty = Mtype.T_unit }
+      unit
 
   | Cexpr_const { c; ty; _ } ->
       let rd = new_temp ty in
@@ -852,7 +827,7 @@ let convert_expr (expr: Mcore.expr) =
   Basic_vec.push ssa (Return return);
   Basic_vec.map_into_list ssa (fun x -> x)
 
-(** We will only do this with *)
+
 let convert_toplevel (top: Mcore.top_item) =
   match top with
   | Ctop_fn { binder; func; export_info_; _ } ->
@@ -871,7 +846,7 @@ let convert_toplevel (top: Mcore.top_item) =
   (*
   No need to deal with stubs.
   They are just declarations of builtin functions, which we don't care -
-  since they don't carry anything about implementation.
+  since they don't carry any information about implementation.
   *)
   | Ctop_stub _ -> []
   
