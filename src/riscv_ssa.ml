@@ -15,6 +15,18 @@ let discard = "_"
 let to_string (r: var) = 
   Printf.sprintf "%s: %s" r.name (Mtype.to_string r.ty)
 
+(** Similar to R-type instructions in RISC-V. *)
+type r_type = {
+  rd: var;
+  rs1: var;
+  rs2: var;
+}
+
+(** R-type, but only one operand. *)
+type r2_type = {
+  rd: var;
+  rs1: var;
+}
 
 (**
 Calls function named `fn` with args `args`,
@@ -102,7 +114,6 @@ and fn = {
   fn: string;
   args: var list;
   body: t list;
-  return: var;
 }
 
 and branch = {
@@ -113,14 +124,36 @@ and branch = {
 
 (**
 Instructions available in 3-address code and SSA.
-
-You might be surprised that there's no Add, Sub etc;
-it's because they are all implemented as Call.
-
-In MoonBit core IR, they use calls to "primitive functions"
-to realise this, and we do a direct translation.
 *)
 and t =
+(* Arithmetic operations *)
+| Add of r_type
+| Sub of r_type
+| Mul of r_type
+| Div of r_type
+| Mod of r_type
+| Less of r_type
+| Leq of r_type
+| Great of r_type
+| Geq of r_type
+| Eq of r_type
+| Neq of r_type
+| Neg of r2_type
+
+(* Floating point operations *)
+| FAdd of r_type
+| FSub of r_type
+| FMul of r_type
+| FDiv of r_type
+| FLess of r_type
+| FLeq of r_type
+| FGreat of r_type
+| FGeq of r_type
+| FEq of r_type
+| FNeq of r_type
+| FNeg of r2_type
+
+(* Others *)
 | Call of call_data
 | AssignInt of assign_int
 | AssignFP of assign_fp
@@ -134,13 +167,43 @@ and t =
 | Phi of phi
 | FnDecl of fn
 | Malloc of malloc
+| Return of var
 | Nop
 
 let to_string t =
+  let rtype op ({ rd; rs1; rs2 }: r_type) =
+    Printf.sprintf "%s = %s %s %s" (to_string rd) rs1.name op rs2.name
+  in
+
   (** Deal with indentation inside functions. *)
   let rec str t depth =
     String.make (depth * 2) ' ' ^
     match t with
+    | Add r -> rtype "+" r
+    | Sub r -> rtype "-" r
+    | Mul r -> rtype "*" r
+    | Div r -> rtype "/" r
+    | Mod r -> rtype "mod" r
+    | Less r -> rtype "<" r
+    | Leq r -> rtype "<=" r
+    | Great r -> rtype ">" r
+    | Geq r -> rtype ">=" r
+    | Eq r -> rtype "==" r
+    | Neq r -> rtype "!=" r
+    | Neg { rd; rs1 } -> Printf.sprintf "%s = -%s" (to_string rd) rs1.name
+
+    | FAdd r -> rtype "+." r
+    | FSub r -> rtype "-." r
+    | FMul r -> rtype "*." r
+    | FDiv r -> rtype "/." r
+    | FLess r -> rtype "<." r
+    | FLeq r -> rtype "<=." r
+    | FGreat r -> rtype ">." r
+    | FGeq r -> rtype ">=." r
+    | FEq r -> rtype "==." r
+    | FNeq r -> rtype "!=." r
+    | FNeg { rd; rs1 } -> Printf.sprintf "%s = -%s" (to_string rd) rs1.name
+
     | Call { rd; fn; args } ->
         let args_list = String.concat ", " (List.map (fun x -> x.name) args) in
         Printf.sprintf "%s = call %s (%s)" (to_string rd) fn args_list
@@ -193,12 +256,14 @@ let to_string t =
     | Malloc { rd; size } ->
         Printf.sprintf "%s = malloc %d" rd.name size
     
-    | FnDecl { fn; args; body; return; } ->
+    | FnDecl { fn; args; body; } ->
         let args_str = String.concat ", " (List.map to_string args) in
-        let return_str = String.make (depth * 2 + 2) ' ' ^ "return " ^ return.name in
         let body_str = String.concat "\n" (List.map (fun t -> str t (depth + 1)) body) in
         
-        Printf.sprintf "fn %s (%s) {\n%s\n%s\n}\n" fn args_str body_str return_str
+        Printf.sprintf "fn %s (%s) {\n%s\n}\n" fn args_str body_str
+
+    | Return var ->
+        Printf.sprintf "return %s" var.name
     
     | Nop -> "nop"
   
@@ -260,9 +325,135 @@ let rec sizeof ty =
   | _ -> failwith "riscv_ssa.ml: cannot calculate size"
 
 
-(**
-Calculate offset of fields in record types.
-*)
+(** The variable defined in the instruction. *)
+let def t = match t with
+| Add { rd; _ } -> [rd]
+| Sub { rd; _ } -> [rd]
+| Mul { rd; _ } -> [rd]
+| Div { rd; _ } -> [rd]
+| Mod { rd; _ } -> [rd]
+| Less { rd; _ } -> [rd]
+| Leq { rd; _ } -> [rd]
+| Great { rd; _ } -> [rd]
+| Geq { rd; _ } -> [rd]
+| Eq { rd; _ } -> [rd]
+| Neq { rd; _ } -> [rd]
+| Neg { rd; _ } -> [rd]
+| FAdd { rd; _ } -> [rd]
+| FSub { rd; _ } -> [rd]
+| FMul { rd; _ } -> [rd]
+| FDiv { rd; _ } -> [rd]
+| FLess { rd; _ } -> [rd]
+| FLeq { rd; _ } -> [rd]
+| FGreat { rd; _ } -> [rd]
+| FGeq { rd; _ } -> [rd]
+| FEq { rd; _ } -> [rd]
+| FNeq { rd; _ } -> [rd]
+| FNeg { rd; _ } -> [rd]
+| Call { rd; _ } -> [rd]
+| AssignInt { rd; _ } -> [rd]
+| AssignFP { rd; _ } -> [rd]
+| AssignStr { rd; _ } -> [rd]
+| Assign { rd; _ } -> [rd]
+| Load { rd; _ } -> [rd]
+| Store _ -> []
+| Jump _ -> []
+| Branch _ -> []
+| Label _ -> []
+| Phi { rd; _ } -> [rd]
+| FnDecl _ -> []
+| Malloc { rd; _ } -> [rd]
+| Return _ -> []
+| Nop -> []
+
+(** Variables that has been accessed in this instruction. *)
+let use t = match t with
+| Add { rs1; rs2; _ } -> [rs1; rs2]
+| Sub { rs1; rs2; _ } -> [rs1; rs2]
+| Mul { rs1; rs2; _ } -> [rs1; rs2]
+| Div { rs1; rs2; _ } -> [rs1; rs2]
+| Mod { rs1; rs2; _ } -> [rs1; rs2]
+| Less { rs1; rs2; _ } -> [rs1; rs2]
+| Leq { rs1; rs2; _ } -> [rs1; rs2]
+| Great { rs1; rs2; _ } -> [rs1; rs2]
+| Geq { rs1; rs2; _ } -> [rs1; rs2]
+| Eq { rs1; rs2; _ } -> [rs1; rs2]
+| Neq { rs1; rs2; _ } -> [rs1; rs2]
+| Neg { rs1; _ } -> [rs1]
+| FAdd { rs1; rs2; _ } -> [rs1; rs2]
+| FSub { rs1; rs2; _ } -> [rs1; rs2]
+| FMul { rs1; rs2; _ } -> [rs1; rs2]
+| FDiv { rs1; rs2; _ } -> [rs1; rs2]
+| FLess { rs1; rs2; _ } -> [rs1; rs2]
+| FLeq { rs1; rs2; _ } -> [rs1; rs2]
+| FGreat { rs1; rs2; _ } -> [rs1; rs2]
+| FGeq { rs1; rs2; _ } -> [rs1; rs2]
+| FEq { rs1; rs2; _ } -> [rs1; rs2]
+| FNeq { rs1; rs2; _ } -> [rs1; rs2]
+| FNeg { rs1; _ } -> [rs1]
+| Call { args; _ } -> args
+| AssignInt _ -> []
+| AssignFP _ -> []
+| AssignStr _ -> []
+| Assign { rs; _ } -> [rs]
+| Load { rs; _ } -> [rs]
+| Store { rd; rs; _ } -> [rd; rs]
+| Jump _ -> []
+| Branch { cond; } -> [cond]
+| Label _ -> []
+| Phi { rs } -> List.map (fun (var, label) -> var) rs
+| FnDecl _ -> []
+| Malloc _ -> []
+| Return var -> [var]
+| Nop -> []
+
+
+(** Push the correct sequence of instruction based on primitives. *)
+let deal_with_prim ssa rd (prim: Primitive.prim) args =
+  let die () =
+    failwith "riscv_ssa.ml: bad primitive format"
+  in
+
+  match prim with
+  | Pcomparison { operand_type; operator } ->
+      let is_fp = (operand_type = F32 || operand_type = F64) in
+      let op = (match is_fp, operator, args with
+      | false, Lt, [rs1; rs2] -> (Less { rd; rs1; rs2 })
+      | true, Lt, [rs1; rs2] -> (FLess { rd; rs1; rs2 })
+      | false, Gt, [rs1; rs2] -> (Great { rd; rs1; rs2 })
+      | true, Gt, [rs1; rs2] -> (FGreat { rd; rs1; rs2 })
+      | false, Ne, [rs1; rs2] -> (Neq { rd; rs1; rs2 })
+      | true, Ne, [rs1; rs2] -> (FNeq { rd; rs1; rs2 })
+      | false, Eq, [rs1; rs2] -> (Eq { rd; rs1; rs2 })
+      | true, Eq, [rs1; rs2] -> (FEq { rd; rs1; rs2 })
+      | false, Le, [rs1; rs2] -> (Leq { rd; rs1; rs2 })
+      | true, Le, [rs1; rs2] -> (FLeq { rd; rs1; rs2 })
+      | false, Ge, [rs1; rs2] -> (Geq { rd; rs1; rs2 })
+      | true, Ge, [rs1; rs2] -> (FGeq { rd; rs1; rs2 })
+      | _ -> die ()) in
+      Basic_vec.push ssa op
+  
+  | Parith { operand_type; operator } ->
+      let is_fp = (operand_type = F32 || operand_type = F64) in
+      let op = (match is_fp, operator, args with
+      | false, Add, [rs1; rs2] -> (Add { rd; rs1; rs2 })
+      | true, Add, [rs1; rs2] -> (FAdd { rd; rs1; rs2 })
+      | false, Sub, [rs1; rs2] -> (Sub { rd; rs1; rs2 })
+      | true, Sub, [rs1; rs2] -> (FSub { rd; rs1; rs2 })
+      | false, Mul, [rs1; rs2] -> (Mul { rd; rs1; rs2 })
+      | true, Mul, [rs1; rs2] -> (FMul { rd; rs1; rs2 })
+      | false, Div, [rs1; rs2] -> (Div { rd; rs1; rs2 })
+      | true, Div, [rs1; rs2] -> (FDiv { rd; rs1; rs2 })
+      | false, Mod, [rs1; rs2] -> (Mod { rd; rs1; rs2 })
+      | false, Neg, [rs1] -> (Neg { rd; rs1 })
+      | true, Neg, [rs1] -> (FNeg { rd; rs1 })
+      | _ -> die ()) in
+      Basic_vec.push ssa op
+  
+  | _ -> Basic_vec.push ssa (Call { rd; fn = (Primitive.sexp_of_prim prim |> S.to_string); args })
+
+
+(** Calculate offset of fields in record types. *)
 let update_types ({ defs; _ }: Mtype.defs) =
   let types = Mtype.Id_hash.to_list defs in
 
@@ -323,16 +514,14 @@ let rec do_convert ssa (expr: Mcore.expr) =
   | Cexpr_object { self; } ->
       do_convert ssa self
   
-  (*
-    We treat primitives like special functions.
-    
-    TODO: Now their names are hard to read; perhaps tidy it up sometime.
-  *)
+  (* Primitives are intrinsic functions. *)
+  (* We tidy some of these up, and compile others into functions. *)
   | Cexpr_prim { prim; args; ty; _ } ->
       let rd = new_temp ty in
       let args = List.map (fun expr -> do_convert ssa expr) args in
-      let fn = Primitive.sexp_of_prim prim |> S.to_string in
-      Basic_vec.push ssa (Call { rd; fn; args });
+      (* TODO: take special care with Psequand and Psequor. *)
+      (* They are short-circuited and should be compiled into if-else. *)
+      deal_with_prim ssa rd prim args;
       rd
 
   | Cexpr_let { name; rhs; body; _ } ->
@@ -371,12 +560,12 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let name =
         (match rs.ty with
         | T_constr id -> id
-        | _ -> failwith "riscv_ssa.ml: currently unsupported record type")
+        | _ -> failwith "TODO: riscv_ssa.ml: currently unsupported record type")
       in
 
       (match accessor with
       | Label _ -> ()
-      | _ -> failwith "riscv_ssa.ml: currently unsupported accessor");
+      | _ -> failwith "TODO: riscv_ssa.ml: currently unsupported accessor");
       
       let offset = offsetof name pos in
       Basic_vec.push ssa (Load { rd; rs; offset; });
@@ -390,7 +579,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
     let name =
       (match rs.ty with
       | T_constr id -> id
-      | _ -> failwith "riscv_ssa.ml: currently unsupported record type")
+      | _ -> failwith "riscv_ssa.ml: can only mutate record types")
     in
     
     let offset = offsetof name pos in
@@ -660,7 +849,8 @@ along with the variable in which the result of this expression is stored.
 let convert_expr (expr: Mcore.expr) =
   let ssa = Basic_vec.make ~dummy:Nop 20 in
   let return = do_convert ssa expr in
-  (Basic_vec.map_into_list ssa (fun x -> x), return)
+  Basic_vec.push ssa (Return return);
+  Basic_vec.map_into_list ssa (fun x -> x)
 
 (** We will only do this with *)
 let convert_toplevel (top: Mcore.top_item) =
@@ -671,11 +861,11 @@ let convert_toplevel (top: Mcore.top_item) =
     in
     let fn = Ident.to_string binder in
     let args = List.map var_of_param func.params in
-    let (body, return) = convert_expr func.body in
+    let body = convert_expr func.body in
     if export_info_ != None then
       prerr_endline "warning: export info is non-empty";
     [
-      FnDecl { fn; args; body; return }
+      FnDecl { fn; args; body }
     ]
 
   (*
@@ -698,10 +888,8 @@ let ssa_of_mcore (core: Mcore.t) =
   (* Deal with main *)
   let with_main = match core.main with
     | Some (main_expr, _) ->
-        let (main_body, return) = convert_expr main_expr in
-        let main_decl =
-          FnDecl { fn = "main"; args = []; body = main_body; return }
-        in
+        let main_body = convert_expr main_expr in
+        let main_decl = FnDecl { fn = "main"; args = []; body = main_body } in
         main_decl :: body
       
     | None -> body
