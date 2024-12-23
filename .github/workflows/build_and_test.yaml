@@ -8,9 +8,12 @@ permissions: read-all
 
 jobs:
   build:
+    env:
+      OPAMROOTISOK: '1'
     strategy:
       matrix:
         os:
+          - riscv-builders
           - ubuntu-latest
 
     runs-on: ${{ matrix.os }}
@@ -19,13 +22,15 @@ jobs:
       - name: Checkout tree
         uses: actions/checkout@v4
 
-      - name: Set-up OCaml
-        uses: ocaml/setup-ocaml@v3
-        with:
-          ocaml-compiler: 4.14.2
+      - run: sudo apt install -yq opam
 
-      - run: opam install . --deps-only --with-test
+      - run: |
+             opam init --disable-sandboxing -y
+             opam switch -y create 4.14.2
+             opam install -y dune
 
-      - run: opam exec -- dune build -p moonbit-lang
+      - run: |
+          eval $(opam env)
+          dune build -p moonbit-lang
 
       - run: ./_build/install/default/bin/moonc -v
