@@ -29,7 +29,7 @@ type r2_type = {
   rs1: var;
 }
 
-(** .Calls function named `fn` with args `args`, and store the result in `rd`. *)
+(** Calls function named `fn` with args `args`, and store the result in `rd`. *)
 type call_data = {
   rd: var;
   fn: string;
@@ -154,6 +154,7 @@ and t =
 | Phi of phi
 | FnDecl of fn
 | GlobalVarDecl of var    (* See notes below *)
+| CallExtern of call_data (* Call a C function *)
 | Malloc of malloc
 | Return of var
 | Nop
@@ -199,7 +200,8 @@ let to_string t =
     | FNeq r -> rtype "!=." r
     | FNeg { rd; rs1 } -> Printf.sprintf "%s = -%s" (to_string rd) rs1.name
 
-    | Call { rd; fn; args } ->
+    | Call { rd; fn; args }
+    | CallExtern { rd; fn; args } ->
         let args_list = String.concat ", " (List.map (fun x -> x.name) args) in
         Printf.sprintf "%s = call %s (%s)" (to_string rd) fn args_list
 
@@ -319,8 +321,8 @@ let rec sizeof ty =
   | Mtype.T_unit -> 0
   | Mtype.T_tuple _ -> pointer_size
   | Mtype.T_constr id -> pointer_size
+  | Mtype.T_fixedarray _ -> pointer_size
   | _ -> failwith "riscv_ssa.ml: cannot calculate size"
-
 
 (** Maps all result registers with `fd` and all operands with `fs`. *)
 let rec reg_map fd fs t = match t with
@@ -348,6 +350,7 @@ let rec reg_map fd fs t = match t with
 | FNeq { rd; rs1; rs2; } -> FNeq { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
 | FNeg { rd; rs1 } -> FNeg { rd = fd rd; rs1 = fs rs1 }
 | Call { rd; fn; args } -> Call { rd = fd rd; fn; args = List.map fs args }
+| CallExtern { rd; fn; args } -> CallExtern { rd = fd rd; fn; args = List.map fs args }
 | AssignInt { rd; imm; size; signed } -> AssignInt { rd = fd rd; imm; size; signed }
 | AssignFP { rd; imm; size } -> AssignFP { rd = fd rd; imm; size; }
 | AssignStr { rd; imm } -> AssignStr { rd = fd rd; imm; }
@@ -420,7 +423,88 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       | _ -> die ()) in
       Basic_vec.push ssa op
 
+  | Parray_make ->
+      (* This should construct a struct like: *)
+      (* struct { void* buf; int len; } *)
+      let buf = new_temp Mtype.T_bytes in
+      let len = new_temp Mtype.T_int in
+      let length = List.length args in
+      let buf_size = if length = 0 then 0 else length * (sizeof (List.hd args).ty) in
+      Basic_vec.push ssa (Malloc { rd; size = 12 });
+      Basic_vec.push ssa (Malloc { rd = buf; size = buf_size });
+      Basic_vec.push ssa (AssignInt { rd = len; imm = Int64.of_int length; size = Bit32; signed = true });
+      Basic_vec.push ssa (Store { rd = buf; rs = rd; offset = 0 });
+      Basic_vec.push ssa (Store { rd = len; rs = rd; offset = 8 });
+
+  (* The argument is whether we perform bound checks. *)
+  (* My observation is that this argument is always Unsafe; *)
+  (* they are done in an earlier stage in MoonBit core IR. *)
+  (* Hence we don't generate bound check code here. *)
+  | Pfixedarray_get_item _ ->
+      if List.length args != 2 then
+        failwith "riscv_ssa.ml: bad call to 'Pfixedarray_get_item'"
+      else
+        let arr = List.nth args 0 in
+        let index = List.nth args 1 in
+        let ty =
+          (match arr.ty with
+          | T_fixedarray { elem } -> elem
+          | _ -> failwith "riscv_ssa.ml: bad type in fixedarray_get_item")
+        in
+        let size = sizeof ty in
+        let addr = new_temp Mtype.T_bytes in
+        let sz = new_temp Mtype.T_int in
+        let offset = new_temp Mtype.T_int in
+
+        (* Same as `rd = *(arr + sizeof(T) * index)` *)
+        Basic_vec.push ssa (AssignInt { rd = sz; imm = Int64.of_int size; size = Bit32; signed = true });
+        Basic_vec.push ssa (Mul { rd = offset; rs1 = sz; rs2 = index });
+        Basic_vec.push ssa (Add { rd = addr; rs1 = arr; rs2 = offset });
+        Basic_vec.push ssa (Load { rd; rs = addr; offset = 0 });
+
+  | Pfixedarray_make { kind } ->
+      (match kind with
+      | Uninit ->
+          if List.length args != 1 then
+            failwith "riscv_ssa.ml: bad call to 'Pfixedarray_make'"
+          else
+            let len = List.hd args in
+            let ty =
+              (match rd.ty with
+              | T_fixedarray { elem } -> elem
+              | _ -> failwith "riscv_ssa.ml: bad type in fixedarray_make")
+            in
+            let size = sizeof ty in
+            let sz = new_temp Mtype.T_int in
+            let length = new_temp Mtype.T_int in
+            (* Same as `rd = malloc(sizeof(T) * len)` *)
+            Basic_vec.push ssa (AssignInt { rd = sz; imm = Int64.of_int size; size = Bit32; signed = true });
+            Basic_vec.push ssa (Mul { rd = length; rs1 = sz; rs2 = len });
+            Basic_vec.push ssa (CallExtern { rd; fn = "malloc"; args = [length] })
+
+      (* Haven't observed occurrence of other values of `kind` *)
+      | _ -> failwith "riscv_ssa.ml: unrecognized config of fixed array make")
+
   | Pignore -> ()
+
+  | Pidentity ->
+      if List.length args != 1 then
+        failwith "riscv_ssa.ml: bad call to 'Pidentity'"
+      else
+        Basic_vec.push ssa (Assign { rd; rs = List.hd args })
+  
+  | Pprintln ->
+      if List.length args != 1 then
+        failwith "riscv_ssa.ml: bad call to 'Pprintln'"
+      else
+        Basic_vec.push ssa (CallExtern { rd; fn = "puts"; args })
+
+  | Pbyteslength
+  | Pstringlength ->
+      if List.length args != 1 then
+        failwith "riscv_ssa.ml: bad call to 'Pprintln'"
+      else
+        Basic_vec.push ssa (CallExtern { rd; fn = "strlen"; args })
   
   | _ -> Basic_vec.push ssa (Call { rd; fn = (Primitive.sexp_of_prim prim |> S.to_string); args })
 
@@ -950,8 +1034,9 @@ let ssa_of_mcore (core: Mcore.t) =
   in
 
   (* Add _start *)
-  Basic_vec.push _start (Call { rd = unit; fn = "main"; args = [] });
-  Basic_vec.push _start (Return unit);
+  let unused = new_temp Mtype.T_unit in
+  Basic_vec.push _start (Call { rd = unused; fn = "main"; args = [] });
+  Basic_vec.push _start (Return unused);
 
   let start_body = Basic_vec.to_list _start in
   let with_start = FnDecl { fn = "_start"; args = []; body = start_body } :: with_main in
