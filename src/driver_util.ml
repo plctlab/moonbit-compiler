@@ -46,6 +46,9 @@ type target =
       clam_callback : clam_passes -> Clam.prog -> unit;
       sexp_callback : W.t list -> unit;
     }
+  | Riscv of {
+      sexp_callback : Riscv.t list -> unit;
+    }
 
 let parse ~diagnostics ~(debug_tokens : bool) (input : mbt_input) :
     Parsing_parse.output =
@@ -239,6 +242,12 @@ let wasm_gen ~(elim_unused_let : bool) (core : Mcore.t) ~clam_callback =
   |> Wasm_of_clam_gc.compile
   |> fun sexp -> Wat sexp
 
+let riscv_gen (core : Mcore.t) =
+  core
+  |> Riscv_ssa.ssa_of_mcore
+  |> Riscv_opt.opt
+  |> Riscv.generate
+
 let link_core ~(shrink_wasm : bool) ~(elim_unused_let : bool)
     ~(core_inputs : core_input Basic_vec.t)
     ~(exported_functions : string Basic_hash_string.t) ~(target : target) : unit
@@ -262,6 +271,7 @@ let link_core ~(shrink_wasm : bool) ~(elim_unused_let : bool)
       | Wat sexp ->
           (if shrink_wasm then Pass_shrink_wasm.shrink sexp else sexp)
           |> sexp_callback)
+  | Riscv { sexp_callback; _ } -> riscv_gen mono_core |> sexp_callback
 
 let gen_test_info ~(diagnostics : Diagnostics.t) ~(json : bool)
     (mbt_files : mbt_input list) : string =

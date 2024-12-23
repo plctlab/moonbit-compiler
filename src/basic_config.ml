@@ -15,15 +15,17 @@
 
 module Map_string = Basic_map_string
 
-type target = Wasm_gc
+type target = Wasm_gc | Riscv
 
 include struct
   let sexp_of_target target = match target with
   | Wasm_gc -> S.Atom "Wasm_gc"
+  | Riscv -> S.Atom "Riscv"
 
   let hash_fold_target hsv arg =
     Ppx_base.hash_fold_int hsv (match arg with
-    | Wasm_gc -> 1)
+    | Wasm_gc -> 1
+    | Riscv -> 2)
 
   let hash_target arg =
       Ppx_base.get_hash_value
@@ -37,6 +39,7 @@ type error_format = Human | Json
 
 let parse_target_exn = function
   | "wasm-gc" -> Wasm_gc
+  | "riscv" -> Riscv
   | other -> raise (Arg.Bad ("unsupported target: " ^ other))
 
 let parse_error_format_exn = function

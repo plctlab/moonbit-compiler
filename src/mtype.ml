@@ -20,9 +20,9 @@ module Lst = Basic_lst
 type id = string
 
 include struct
-  let _ = fun (_ : id) -> ()
+  
   let sexp_of_id = (Moon_sexp_conv.sexp_of_string : id -> S.t)
-  let _ = sexp_of_id
+
 end
 
 module Id_hash : Basic_hash_intf.S with type key = id = Basic_hash_string
@@ -55,91 +55,53 @@ type t =
 [@@warning "+4"]
 
 include struct
-  let _ = fun (_ : t) -> ()
-
-  let rec sexp_of_t =
-    (function
-     | T_int -> S.Atom "T_int"
-     | T_char -> S.Atom "T_char"
-     | T_bool -> S.Atom "T_bool"
-     | T_unit -> S.Atom "T_unit"
-     | T_byte -> S.Atom "T_byte"
-     | T_int64 -> S.Atom "T_int64"
-     | T_uint -> S.Atom "T_uint"
-     | T_uint64 -> S.Atom "T_uint64"
-     | T_float -> S.Atom "T_float"
-     | T_double -> S.Atom "T_double"
-     | T_string -> S.Atom "T_string"
-     | T_bytes -> S.Atom "T_bytes"
-     | T_optimized_option { elem = elem__002_ } ->
-         let bnds__001_ = ([] : _ Stdlib.List.t) in
-         let bnds__001_ =
-           let arg__003_ = sexp_of_t elem__002_ in
-           (S.List [ S.Atom "elem"; arg__003_ ] :: bnds__001_ : _ Stdlib.List.t)
-         in
-         S.List (S.Atom "T_optimized_option" :: bnds__001_)
-     | T_func { params = params__005_; return = return__007_ } ->
-         let bnds__004_ = ([] : _ Stdlib.List.t) in
-         let bnds__004_ =
-           let arg__008_ = sexp_of_t return__007_ in
-           (S.List [ S.Atom "return"; arg__008_ ] :: bnds__004_
-             : _ Stdlib.List.t)
-         in
-         let bnds__004_ =
-           let arg__006_ = Moon_sexp_conv.sexp_of_list sexp_of_t params__005_ in
-           (S.List [ S.Atom "params"; arg__006_ ] :: bnds__004_
-             : _ Stdlib.List.t)
-         in
-         S.List (S.Atom "T_func" :: bnds__004_)
-     | T_tuple { tys = tys__010_ } ->
-         let bnds__009_ = ([] : _ Stdlib.List.t) in
-         let bnds__009_ =
-           let arg__011_ = Moon_sexp_conv.sexp_of_list sexp_of_t tys__010_ in
-           (S.List [ S.Atom "tys"; arg__011_ ] :: bnds__009_ : _ Stdlib.List.t)
-         in
-         S.List (S.Atom "T_tuple" :: bnds__009_)
-     | T_fixedarray { elem = elem__013_ } ->
-         let bnds__012_ = ([] : _ Stdlib.List.t) in
-         let bnds__012_ =
-           let arg__014_ = sexp_of_t elem__013_ in
-           (S.List [ S.Atom "elem"; arg__014_ ] :: bnds__012_ : _ Stdlib.List.t)
-         in
-         S.List (S.Atom "T_fixedarray" :: bnds__012_)
-     | T_constr arg0__015_ ->
-         let res0__016_ = sexp_of_id arg0__015_ in
-         S.List [ S.Atom "T_constr"; res0__016_ ]
-     | T_trait arg0__017_ ->
-         let res0__018_ = sexp_of_id arg0__017_ in
-         S.List [ S.Atom "T_trait"; res0__018_ ]
-     | T_any { name = name__020_ } ->
-         let bnds__019_ = ([] : _ Stdlib.List.t) in
-         let bnds__019_ =
-           let arg__021_ = sexp_of_id name__020_ in
-           (S.List [ S.Atom "name"; arg__021_ ] :: bnds__019_ : _ Stdlib.List.t)
-         in
-         S.List (S.Atom "T_any" :: bnds__019_)
-     | T_maybe_uninit arg0__022_ ->
-         let res0__023_ = sexp_of_t arg0__022_ in
-         S.List [ S.Atom "T_maybe_uninit"; res0__023_ ]
-     | T_error_value_result { ok = ok__025_; err = err__027_; id = id__029_ } ->
-         let bnds__024_ = ([] : _ Stdlib.List.t) in
-         let bnds__024_ =
-           let arg__030_ = sexp_of_id id__029_ in
-           (S.List [ S.Atom "id"; arg__030_ ] :: bnds__024_ : _ Stdlib.List.t)
-         in
-         let bnds__024_ =
-           let arg__028_ = sexp_of_t err__027_ in
-           (S.List [ S.Atom "err"; arg__028_ ] :: bnds__024_ : _ Stdlib.List.t)
-         in
-         let bnds__024_ =
-           let arg__026_ = sexp_of_t ok__025_ in
-           (S.List [ S.Atom "ok"; arg__026_ ] :: bnds__024_ : _ Stdlib.List.t)
-         in
-         S.List (S.Atom "T_error_value_result" :: bnds__024_)
-      : t -> S.t)
-
-  let _ = sexp_of_t
+  let rec sexp_of_t t = match t with
+    | T_int -> S.Atom "int"
+    | T_char -> S.Atom "char"
+    | T_bool -> S.Atom "bool"
+    | T_unit -> S.Atom "unit"
+    | T_byte -> S.Atom "byte"
+    | T_int64 -> S.Atom "int64"
+    | T_uint -> S.Atom "uint"
+    | T_uint64 -> S.Atom "uint64"
+    | T_float -> S.Atom "float"
+    | T_double -> S.Atom "double"
+    | T_string -> S.Atom "string"
+    | T_bytes -> S.Atom "bytes"
+    | T_optimized_option { elem } ->
+        let x = [S.List [ S.Atom "elem"; sexp_of_t elem ]] in
+        S.List (S.Atom "optimized_option" :: x)
+    | T_func { params; return = ret } ->
+        let x = [S.List [ S.Atom "return"; sexp_of_t ret ]] in
+        let y =
+          S.List [ S.Atom "params"; Moon_sexp_conv.sexp_of_list sexp_of_t params ] :: x
+        in
+        S.List (S.Atom "func" :: y)
+    | T_tuple { tys } ->
+        let x =
+          [S.List [ S.Atom "tys"; Moon_sexp_conv.sexp_of_list sexp_of_t tys ]]
+        in
+        S.List (S.Atom "tuple" :: x)
+    | T_fixedarray { elem } ->
+        let x = [S.List [ S.Atom "elem"; sexp_of_t elem ]] in
+        S.List (S.Atom "fixedarray" :: x)
+    | T_constr x ->
+        S.List [ S.Atom "constr"; sexp_of_id x ]
+    | T_trait x ->
+        S.List [ S.Atom "trait"; sexp_of_id x ]
+    | T_any { name } ->
+        let x = [S.List [ S.Atom "name"; sexp_of_id name ]] in
+        S.List (S.Atom "any" :: x)
+    | T_maybe_uninit x ->
+        S.List [ S.Atom "maybe_uninit"; sexp_of_t x ]
+    | T_error_value_result { ok; err; id } ->
+        let x = [S.List [ S.Atom "id"; sexp_of_id id ]] in
+        let y = S.List [ S.Atom "err"; sexp_of_t err ] :: x in
+        let z = S.List [ S.Atom "ok"; sexp_of_t ok ] :: y in
+        S.List (S.Atom "error_value_result" :: z)
 end
+
+let to_string (t: t) = sexp_of_t t |> S.to_string
 
 let is_numeric (t : t) =
   match t with
@@ -161,7 +123,6 @@ let is_numeric (t : t) =
 type field_name = Named of string | Indexed of int
 
 include struct
-  let _ = fun (_ : field_name) -> ()
 
   let sexp_of_field_name =
     (function
@@ -173,27 +134,11 @@ include struct
          S.List [ S.Atom "Indexed"; res0__034_ ]
       : field_name -> S.t)
 
-  let _ = sexp_of_field_name
 end
-
-let field_index0 = Indexed 0
-let field_index1 = Indexed 1
-let field_index2 = Indexed 2
-let field_index3 = Indexed 3
-
-let field_indexed i =
-  match i with
-  | 0 -> field_index0
-  | 1 -> field_index1
-  | 2 -> field_index2
-  | 3 -> field_index3
-  | n -> Indexed n
 
 type field_info = { field_type : t; name : field_name; mut : bool }
 
 include struct
-  let _ = fun (_ : field_info) -> ()
-
   let sexp_of_field_info =
     (fun { field_type = field_type__036_; name = name__038_; mut = mut__040_ } ->
        let bnds__035_ = ([] : _ Stdlib.List.t) in
@@ -212,8 +157,6 @@ include struct
        in
        S.List bnds__035_
       : field_info -> S.t)
-
-  let _ = sexp_of_field_info
 end
 
 type constr_info = { payload : field_info list; tag : Tag.t }
@@ -615,7 +558,7 @@ let from_stype (stype : Stype.t) ~(stype_defs : Typing_info.stype_defs)
           let payload =
             Lst.mapi c.cs_args (fun i ty ->
                 let field_type = go ty in
-                { field_type; name = field_indexed i; mut = false })
+                { field_type; name = Indexed i; mut = false })
           in
           { payload; tag }
         in
@@ -640,7 +583,7 @@ let from_stype (stype : Stype.t) ~(stype_defs : Typing_info.stype_defs)
                     | Labelled { label; is_mut = mut; _ } ->
                         { field_type; name = Named label; mut }
                     | Positional index ->
-                        { field_type; name = field_indexed index; mut = false }
+                        { field_type; name = Indexed index; mut = false }
                     | Optional _ | Autofill _ | Question_optional _ ->
                         assert false)
               in
@@ -679,7 +622,7 @@ let from_stype (stype : Stype.t) ~(stype_defs : Typing_info.stype_defs)
                     | Labelled { label; is_mut = mut; _ } ->
                         { field_type; name = Named label; mut }
                     | Positional index ->
-                        { field_type; name = field_indexed index; mut = false }
+                        { field_type; name = Indexed index; mut = false }
                     | Optional _ | Autofill _ | Question_optional _ ->
                         assert false)
               in

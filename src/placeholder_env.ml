@@ -132,7 +132,7 @@ let make ~foreign_types ~type_defs ~trait_defs =
       in
       add_trait name;
       let object_safety_status =
-        Lst.append
+        List.append
           (Hash_string.find_exn object_safety_of_traits name)
           (Vec.map_into_list not_object_safe_supers (fun super ->
                Trait_decl.Bad_super_trait super))

@@ -41,7 +41,7 @@ dune build -p moonbit-lang
 
 ### 使用
 
-MoonBit 的核心库一般安装在 `~/.moon/lib/core` 下。在下面的命令中，我们会用 `$core` 表示核心库的安装路径。在 `$core/target` 下，有 `js`, `wasm` 和 `wasm-gc` 这三个文件夹，它们包含在对应目标下编译好的核心库。我们用 `$target` 表示这三者之一。
+MoonBit 的核心库一般安装在 `~/.moon/lib/core` 下。在下面的命令中，我们会用 `$core` 表示核心库的安装路径。你可以选择 `riscv` 或 `wasm-gc` 作为编译目标，我们用 `$target` 表示这两者之一。值得注意的是，目前 `riscv` 只会产生 SSA 文件，而不会产生汇编代码。
 
 `$src` 表示源代码的路径；在这个文件夹下，除了源代码之外还必须包括一个 `moon.pkg.json`。如果你不清楚如何编写这个文件，可以考虑使用 [moon](https://github.com/moonbitlang/moon) 来初始化。
 
@@ -70,7 +70,9 @@ moon bundle --source-dir $core
 现在你可以使用这些命令来编译 `.mbt` 文件:
 
 ```bash
-bundled=$core/target/$target/release/bundle
+# 即使 $target 是 `riscv`，也依然可以使用这个路径。
+# 这是因为 bundle 文件夹的内容是中间表示 (IR)，它和编译目标无关。
+bundled=$core/target/wasm-gc/release/bundle
 
 # 这里 main.mbt 是一个含有 `fn main` 的文件。
 moonc build-package $src/main.mbt -is-main -std-path $core/target/$bundled -o $obj -target $target

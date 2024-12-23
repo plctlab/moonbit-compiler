@@ -43,7 +43,7 @@ You would also need to build the core library, as instructed in the following se
 
 ### Usage
 
-MoonBit's core library is typically installed in `~/.moon/lib/core/`. In following commands, we use `$core` to denote the path. The language is shipped with pre-built libraries under different targets: `js`, `wasm` and `wasm-gc`; however, this compiler currently supports only `wasm-gc`. Let `$target` stand for this value.
+MoonBit's core library is typically installed in `~/.moon/lib/core/`. In following commands, we use `$core` to denote the path. You can choose your target between `riscv` and `wasm-gc`, which we denote by `$target`. Currently, `riscv` will only produce a `.ssa` file for static single assignment IR, and does not proceed to generate assembly.
 
 We use `$src` to denote the path to your main package. This package must contain, along with your source files, a `moon.pkg.json`; if you're not sure how this works, you can use [moon](https://github.com/moonbitlang/moon) to initialize a MoonBit repository.
 
@@ -67,15 +67,17 @@ moon bundle --source-dir $core
 
 We strongly recommend that you build the core library yourself via the commands above. The pre-built binaries are not always compatible with this compiler, as MoonBit is still under development.
 
-You should verify that there is a folder called `wasm-gc` under `$core/target`.
+You should verify that now there is a folder called `wasm-gc` under `$core/target`.
 
 Now you can compile `.mbt` files with these commands:
 
 ```bash
-bundled=$core/target/$target/release/bundle
+# Even if you are targeting RISC-V, you can still use this path.
+# That's because it's intermediate representation (IR) in the bundle;
+# it is ignorant of target.
+bundled=$core/target/wasm-gc/release/bundle
 
 # Here, main.mbt should be a file containing `fn main`.
-# `build-package` produces intermediate representation (IR); it is ignorant of target.
 moonc build-package $src/main.mbt -is-main -std-path $bundled -o $obj
 
 # If you have more than one package, remember to include all of them in -pkg-sources. They should be separated by colon ':'.

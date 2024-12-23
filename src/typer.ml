@@ -757,7 +757,7 @@ let rec infer_expr (env : Local_env.t) (expr : Syntax.expr)
               Type.filter_product ~blame:Filtered_type ~arity:None ty_tuple loc_
             with
             | Ok tys -> (
-                match Lst.nth_opt tys index with
+                match List.nth_opt tys index with
                 | Some ty -> ty
                 | None ->
                     add_error diagnostics

@@ -72,17 +72,6 @@ and array_get_kind = Safe | Unsafe | Rev_unsafe
 and array_set_kind = Null | Default | Value | Unsafe
 
 include struct
-  let _ = fun (_ : operand_type) -> ()
-  let _ = fun (_ : convert_kind) -> ()
-  let _ = fun (_ : arith_operator) -> ()
-  let _ = fun (_ : bitwise_operator) -> ()
-  let _ = fun (_ : comparison) -> ()
-  let _ = fun (_ : cast_kind) -> ()
-  let _ = fun (_ : prim) -> ()
-  let _ = fun (_ : make_array_kind) -> ()
-  let _ = fun (_ : array_get_kind) -> ()
-  let _ = fun (_ : array_set_kind) -> ()
-
   let rec sexp_of_operand_type =
     (function
      | I32 -> S.Atom "I32"

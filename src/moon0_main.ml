@@ -143,6 +143,9 @@ let wat_gen (sexp : W.t list) =
           Buffer.add_string buf (W.to_string s)) ss);
   Buffer.contents buf
 
+let riscv_gen (sexp : Riscv.t list) =
+  List.map Riscv.to_asm_string sexp |> String.concat "\n"
+
 let bundle_core () =
   let output_file = ref "" in
   let inputs = ref [] in
@@ -199,11 +202,19 @@ let link_core () =
     else raise (Arg.Bad ("unrecognized output file type: " ^ filename ^ "; must be one of .wat or .wasm"))
   in
 
+  let riscv_gen_target sexp =
+    (* No need to check file type as in wasm. *)
+    (* We will write RISC-V assembly anyway. *)
+    Io.write !output_file (riscv_gen sexp)
+  in
+
 
   let target =
     match !Config.target with
     | Wasm_gc ->
         Driver_util.Wasm_gc { clam_callback = (fun _ _ -> ()); sexp_callback = wasm_gen_target }
+    | Riscv ->
+        Driver_util.Riscv { sexp_callback = riscv_gen_target }
   in
   Driver_util.link_core ~shrink_wasm:!shrink_wasm
     ~elim_unused_let:!elim_unused_let ~core_inputs:input_files
@@ -429,6 +440,7 @@ let compile () =
       | Wasm_gc ->
           let mod_ = wasm_gen ~name mono_core in
           postprecess mod_
+      | Riscv -> failwith "TODO" (* TODO *)
     with Exit -> ()
   in
   Arg.parse_argv ~current:(ref 1) Sys.argv spec

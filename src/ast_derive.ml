@@ -1329,7 +1329,7 @@ let derive_from_json (trait : Syntax.type_name) (decl : Syntax.type_decl)
                 in
                 (S.pmap pattern, expr))
           in
-          Lst.append_one map_cases err_case |> S.match_ json
+          List.append map_cases [err_case] |> S.match_ json
       | Ptd_record fields ->
           let vars = Lst.map fields (fun _ -> fresh_name "field") in
           let pattern =

@@ -29,9 +29,9 @@ module Unsafe_external = Basic_unsafe_external
 module Arr = Basic_arr
 open Unsafe_external
 
-let rec map l f = List.map f l
+let map l f = List.map f l
 
-let rec has_string (l : string list) query = List.mem query l
+let has_string (l : string list) query = List.mem query l
 
 let rec map_combine l1 l2 f =
   match (l1, l2) with
@@ -87,62 +87,15 @@ let rec map_split_opt (xs : 'a list) (f : 'a -> 'b option * 'c option) :
       ( (match c with Some c -> c :: cs | None -> cs),
         match d with Some d -> d :: ds | None -> ds ))
 
-let rec map_snd l f =
-  match l with
-  | [] -> []
-  | (v1, x1) :: [] ->
-      let y1 = f x1 in
-      [ (v1, y1) ]
-  | [ (v1, x1); (v2, x2) ] ->
-      let y1 = f x1 in
-      let y2 = f x2 in
-      [ (v1, y1); (v2, y2) ]
-  | [ (v1, x1); (v2, x2); (v3, x3) ] ->
-      let y1 = f x1 in
-      let y2 = f x2 in
-      let y3 = f x3 in
-      [ (v1, y1); (v2, y2); (v3, y3) ]
-  | [ (v1, x1); (v2, x2); (v3, x3); (v4, x4) ] ->
-      let y1 = f x1 in
-      let y2 = f x2 in
-      let y3 = f x3 in
-      let y4 = f x4 in
-      [ (v1, y1); (v2, y2); (v3, y3); (v4, y4) ]
-  | (v1, x1) :: (v2, x2) :: (v3, x3) :: (v4, x4) :: (v5, x5) :: tail ->
-      let y1 = f x1 in
-      let y2 = f x2 in
-      let y3 = f x3 in
-      let y4 = f x4 in
-      let y5 = f x5 in
-      (v1, y1) :: (v2, y2) :: (v3, y3) :: (v4, y4) :: (v5, y5) :: map_snd tail f
+let map_snd l f = List.map (fun (a, b) -> (a, f b)) l
 
 let rec map_last l f =
   match l with
   | [] -> []
   | x1 :: [] ->
-      let y1 = f true x1 in
-      [ y1 ]
-  | [ x1; x2 ] ->
-      let y1 = f false x1 in
-      let y2 = f true x2 in
-      [ y1; y2 ]
-  | [ x1; x2; x3 ] ->
-      let y1 = f false x1 in
-      let y2 = f false x2 in
-      let y3 = f true x3 in
-      [ y1; y2; y3 ]
-  | [ x1; x2; x3; x4 ] ->
-      let y1 = f false x1 in
-      let y2 = f false x2 in
-      let y3 = f false x3 in
-      let y4 = f true x4 in
-      [ y1; y2; y3; y4 ]
-  | x1 :: x2 :: x3 :: x4 :: tail ->
-      let y1 = f false x1 in
-      let y2 = f false x2 in
-      let y3 = f false x3 in
-      let y4 = f false x4 in
-      y1 :: y2 :: y3 :: y4 :: map_last tail f
+      let y1 = f true x1 in [ y1 ]
+  | x1 :: tail ->
+      let y1 = f false x1 in y1 :: map_last tail f
 
 let rec mapi_aux lst i f tail =
   match lst with
@@ -151,7 +104,7 @@ let rec mapi_aux lst i f tail =
       let r = f i a in
       r :: mapi_aux l (i + 1) f tail
 
-let mapi lst f = mapi_aux lst 0 f []
+let mapi lst f = List.mapi f lst
 let mapi_append lst f tail = mapi_aux lst 0 f tail
 
 let rec last xs =
@@ -159,20 +112,6 @@ let rec last xs =
   | x :: [] -> x
   | _ :: tl -> last tl
   | [] -> invalid_arg __FUNCTION__
-
-let rec append_aux l1 l2 =
-  match l1 with
-  | [] -> l2
-  | a0 :: [] -> a0 :: l2
-  | [ a0; a1 ] -> a0 :: a1 :: l2
-  | [ a0; a1; a2 ] -> a0 :: a1 :: a2 :: l2
-  | [ a0; a1; a2; a3 ] -> a0 :: a1 :: a2 :: a3 :: l2
-  | [ a0; a1; a2; a3; a4 ] -> a0 :: a1 :: a2 :: a3 :: a4 :: l2
-  | a0 :: a1 :: a2 :: a3 :: a4 :: rest ->
-      a0 :: a1 :: a2 :: a3 :: a4 :: append_aux rest l2
-
-let append l1 l2 = match l2 with [] -> l1 | _ -> append_aux l1 l2
-let append_one l1 x = append_aux l1 [ x ]
 
 let rec map_append l1 l2 f =
   match l1 with
@@ -556,83 +495,15 @@ let rec rev_iter l f =
   match l with
   | [] -> ()
   | x1 :: [] -> f x1
-  | [ x1; x2 ] ->
-      f x2;
-      f x1
-  | [ x1; x2; x3 ] ->
-      f x3;
-      f x2;
-      f x1
-  | [ x1; x2; x3; x4 ] ->
-      f x4;
-      f x3;
-      f x2;
-      f x1
-  | x1 :: x2 :: x3 :: x4 :: x5 :: tail ->
+  | x1 :: tail ->
       rev_iter tail f;
-      f x5;
-      f x4;
-      f x3;
-      f x2;
       f x1
 
-let rec iter l f =
-  match l with
-  | [] -> ()
-  | x1 :: [] -> f x1
-  | [ x1; x2 ] ->
-      f x1;
-      f x2
-  | [ x1; x2; x3 ] ->
-      f x1;
-      f x2;
-      f x3
-  | [ x1; x2; x3; x4 ] ->
-      f x1;
-      f x2;
-      f x3;
-      f x4
-  | x1 :: x2 :: x3 :: x4 :: x5 :: tail ->
-      f x1;
-      f x2;
-      f x3;
-      f x4;
-      f x5;
-      iter tail f
+let iter l f = List.iter f l
 
-let rec iteri_aux l f i =
-  match l with
-  | [] -> ()
-  | x1 :: [] -> f i x1
-  | [ x1; x2 ] ->
-      f i x1;
-      f (i + 1) x2
-  | [ x1; x2; x3 ] ->
-      f i x1;
-      f (i + 1) x2;
-      f (i + 2) x3
-  | [ x1; x2; x3; x4 ] ->
-      f i x1;
-      f (i + 1) x2;
-      f (i + 2) x3;
-      f (i + 3) x4
-  | x1 :: x2 :: x3 :: x4 :: x5 :: tail ->
-      f i x1;
-      f (i + 1) x2;
-      f (i + 2) x3;
-      f (i + 3) x4;
-      f (i + 4) x5;
-      iteri_aux tail f (i + 5)
+let iteri l f = List.iteri f l
 
-let iteri l f = iteri_aux l f 0
-
-let rec iter2 l1 l2 f =
-  match (l1, l2) with
-  | [], [] -> ()
-  | a1 :: l1, a2 :: l2 ->
-      f a1 a2;
-      iter2 l1 l2 f
-  | _, _ -> invalid_arg __FUNCTION__
+let iter2 l1 l2 f = List.iter2 f l1 l2
 
 let rec for_all lst p =
   match lst with [] -> true | a :: l -> p a && for_all l p
@@ -750,13 +621,6 @@ let rec assoc_by_opt lst comp k =
 let assoc_str lst str = assoc_by_opt lst String.equal str
 let assoc_str_exn lst str = assoc_by_string lst str None
 
-let rec nth_aux l n =
-  match l with
-  | [] -> None
-  | a :: l -> if n = 0 then Some a else nth_aux l (n - 1)
-
-let nth_opt l n = if n < 0 then None else nth_aux l n
-
 let rec iter_snd lst f =
   match lst with
   | [] -> ()
@@ -780,10 +644,9 @@ let rec exists_snd l p =
   match l with [] -> false | (_, a) :: l -> p a || exists_snd l p
 
 let rec concat_append (xss : 'a list list) (xs : 'a list) : 'a list =
-  match xss with [] -> xs | l :: r -> append l (concat_append r xs)
+  match xss with [] -> xs | l :: r -> List.append l (concat_append r xs)
 
-let rec fold_left l accu f =
-  match l with [] -> accu | a :: l -> fold_left l (f accu a) f
+let fold_left l init f = List.fold_left f init l
 
 let reduce_from_left lst fn =
   match lst with
