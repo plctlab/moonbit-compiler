@@ -406,7 +406,7 @@ let desugar_matchfn cases has_error fn_loc_ loc_ ~diagnostics : Syntax.func =
               has_error;
             }
       | n when n > 1 ->
-          let param_names = Lst.init n (fun _ -> fresh_param_name ()) in
+          let param_names = List.init n (fun _ -> fresh_param_name ()) in
           let param_names_with_loc = Lst.map param_names to_parameter in
           let cases =
             Lst.map cases (fun (pats, body) -> (pat_tuple pats, body))

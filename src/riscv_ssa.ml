@@ -29,25 +29,17 @@ type r2_type = {
   rs1: var;
 }
 
-(**
-Calls function named `fn` with args `args`,
-and store the result in `rd`.
-*)
+(** .Calls function named `fn` with args `args`, and store the result in `rd`. *)
 type call_data = {
   rd: var;
   fn: string;
   args: var list;
 }
 
-(**
-Lengths of immediates.
-Other lengths (like 16-bit short) are not supported currently.
-*)
-type imm_type = Bit32 | Bit64 | Bit8
+(** Lengths of immediates. No need to distinguish smaller bitlengths. *)
+type imm_type = Bit32 | Bit64
 
-(**
-Assigns (un-)signed integer `imm` to `rd`.
-*)
+(** Assigns (un-)signed integer `imm` to `rd`. *)
 type assign_int = {
   rd: var;
   imm: int64;
@@ -55,9 +47,7 @@ type assign_int = {
   signed: bool;
 }
 
-(**
-Assigns floating point number `imm` to `rd`.
-*)
+(** Assigns floating point number `imm` to `rd`. *)
 type assign_fp = {
   rd: var;
   imm: float;
@@ -108,9 +98,7 @@ type malloc = {
   size: int;
 }
 
-(**
-`entry` is the first basic block we'll encounter in this function.
-*)
+(** `entry` is the first basic block we'll encounter in this function. *)
 and fn = {
   fn: string;
   args: var list;
@@ -123,9 +111,7 @@ and branch = {
   ifnot: string;
 }
 
-(**
-Instructions available in 3-address code and SSA.
-*)
+(** Instructions available in 3-address code and SSA. *)
 and t =
 (* Arithmetic operations *)
 | Add of r_type
@@ -167,9 +153,17 @@ and t =
 | Label of string
 | Phi of phi
 | FnDecl of fn
+| GlobalVarDecl of var    (* See notes below *)
 | Malloc of malloc
 | Return of var
 | Nop
+
+(* Note: *)
+(* GlobalVarDecl is only a declaration. *)
+(* We will insert a function `_start` to initialize them. *)
+(* Global vars should be traited as a label (an address). *)
+(* We compile accesses to them in load/store in this stage, *)
+(* So no special treatment needed in RISC-V generation stage. *)
 
 let to_string t =
   let rtype op ({ rd; rs1; rs2 }: r_type) =
@@ -215,17 +209,14 @@ let to_string t =
           | (Bit32, true) -> ""
           | (Bit64, true) -> "ll"
           | (Bit32, false) -> "u"
-          | (Bit64, false) -> "ull"
-          | (Bit8, true) -> "b"
-          | (Bit8, false) -> "ub")
+          | (Bit64, false) -> "ull")
         in 
         Printf.sprintf "%s = %s%s" (to_string rd) (Int64.to_string imm) suffix
 
     | AssignFP { rd; imm; size; } ->
         let suffix = (match size with
           | Bit32 -> "f"
-          | Bit64 -> ""
-          | _ -> failwith "riscv_ssa.ml: bad floating-point length")
+          | Bit64 -> "")
         in
         Printf.sprintf "%s = %f%s" (to_string rd) imm suffix
     
@@ -263,6 +254,9 @@ let to_string t =
         
         Printf.sprintf "fn %s (%s) {\n%s\n}\n" fn args_str body_str
 
+    | GlobalVarDecl var ->
+        Printf.sprintf "global %s\n" (to_string var);
+
     | Return var ->
         Printf.sprintf "return %s" var.name
     
@@ -287,19 +281,21 @@ let new_label prefix =
   name
 
 (**
-Currently I don't know what does `prim` ever mean in some places,
-so I ignore them in total.
-
-Try update this when I know more.
+Some MoonBit IR instructions carry optional compiler primitives in strange places.
+I haven't met a case when those are not `None`, but a check is put here in case.
 *)
 let warn prim = match prim with
 | None -> ()
 | Some _ -> prerr_endline "warning: prim is not null"
 
+module Varset = Set.Make(String)
+
+let global_vars = ref Varset.empty
 
 let offset_table = Hashtbl.create 64
 let size_table = Hashtbl.create 64
 
+(** Get offset of the `pos`-th field in the record type called `name`. *)
 let offsetof name pos = Hashtbl.find offset_table (name, pos)
 
 
@@ -321,8 +317,8 @@ let rec sizeof ty =
   | Mtype.T_uint -> 4
   | Mtype.T_uint64 -> 8
   | Mtype.T_unit -> 0
-  | Mtype.T_tuple { tys } -> List.fold_left (fun total x -> total + sizeof x) 0 tys
-  | Mtype.T_constr id -> Hashtbl.find size_table id
+  | Mtype.T_tuple _ -> pointer_size
+  | Mtype.T_constr id -> pointer_size
   | _ -> failwith "riscv_ssa.ml: cannot calculate size"
 
 
@@ -363,6 +359,7 @@ let rec reg_map fd fs t = match t with
 | Label label -> Label label
 | Phi { rd; rs } -> Phi { rd = fd rd; rs = List.map (fun (x, name) -> (fs x, name)) rs }
 | FnDecl { fn; args; body } -> FnDecl { fn; args; body = List.map (fun x -> reg_map fd fs x) body } 
+| GlobalVarDecl var -> GlobalVarDecl var
 | Malloc { rd; size } -> Malloc { rd = fd rd; size }
 | Return var -> Return (fs var)
 | Nop -> Nop
@@ -428,7 +425,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
   | _ -> Basic_vec.push ssa (Call { rd; fn = (Primitive.sexp_of_prim prim |> S.to_string); args })
 
 
-(** Calculate offset of fields in record types. *)
+(** Extract information from types and store them in global variables. *)
 let update_types ({ defs; _ }: Mtype.defs) =
   let types = Mtype.Id_hash.to_list defs in
 
@@ -436,8 +433,11 @@ let update_types ({ defs; _ }: Mtype.defs) =
     match info with
     | Mtype.Placeholder -> ()
     | Mtype.Externref -> ()
+
+    (** We don't care about declarations in traits. *)
     | Mtype.Trait _ -> ()
 
+    (** Calculate offset of fields in record types. *)
     | Mtype.Record { fields } -> 
         let extract (x: Mtype.field_info) = x.field_type in
         let field_types = List.map extract fields in
@@ -473,16 +473,21 @@ let rec do_convert ssa (expr: Mcore.expr) =
   | Cexpr_var { id; ty; prim; _ } ->
       warn prim;
 
-      let variable = { name = Ident.to_string id; ty } in
+      let name = Ident.to_string id in
+      let variable = { name; ty } in
 
-      (* We treat mutables as pointers. *)
-      (match id with
-      | Pmutable_ident _ ->
-          let rd = new_temp ty in
-          Basic_vec.push ssa (Load { rd; rs = variable; offset = 0 });
-          rd
-      
-      | _ -> variable);
+      (* Global variables are pointers. *)
+      (* Mutable variables are also pointers. *)
+      let is_pointer = 
+        (Varset.mem name !global_vars) ||
+        (match id with Pmutable_ident _ -> true | _ -> false)
+      in
+
+      if not is_pointer then variable
+      else
+        let rd = new_temp ty in
+        Basic_vec.push ssa (Load { rd; rs = variable; offset = 0 });
+        rd
   
       
   (* Not quite sure about this; is it simply a variable access? *)
@@ -511,7 +516,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
           Basic_vec.push ssa (Jump ifexit);
 
           Basic_vec.push ssa (Label ifnot);
-          Basic_vec.push ssa (AssignInt { rd = t2; imm = 0L; size = Bit8; signed = true });
+          Basic_vec.push ssa (AssignInt { rd = t2; imm = 0L; size = Bit32; signed = true });
           Basic_vec.push ssa (Jump ifexit);
 
           Basic_vec.push ssa (Label ifexit);
@@ -529,7 +534,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
           Basic_vec.push ssa (Branch { cond; ifso; ifnot });
 
           Basic_vec.push ssa (Label ifso);
-          Basic_vec.push ssa (AssignInt { rd = t1; imm = 1L; size = Bit8; signed = true });
+          Basic_vec.push ssa (AssignInt { rd = t1; imm = 1L; size = Bit32; signed = true });
           Basic_vec.push ssa (Jump ifexit);
 
           Basic_vec.push ssa (Label ifnot);
@@ -574,23 +579,25 @@ let rec do_convert ssa (expr: Mcore.expr) =
       do_convert ssa expr2
 
   (* Meaning: access the `pos`-th field of `record` *)
+  (* Here `record` might be a record type or a tuple *)
   | Cexpr_field { record; accessor; pos; ty; _ } ->
       let rd = new_temp ty in
       let rs = do_convert ssa record in
       
-      let name =
-        (match rs.ty with
-        | T_constr id -> id
-        | _ -> failwith "TODO: riscv_ssa.ml: currently unsupported record type")
-      in
-
-      (match accessor with
-      | Label _ -> ()
-      | _ -> failwith "TODO: riscv_ssa.ml: currently unsupported accessor");
-      
-      let offset = offsetof name pos in
-      Basic_vec.push ssa (Load { rd; rs; offset; });
-      rd
+      (match rs.ty with
+        | T_constr name ->
+            let offset = offsetof name pos in
+            Basic_vec.push ssa (Load { rd; rs; offset; });
+            rd
+          
+        | T_tuple { tys } ->
+            let precede = Basic_lst.take pos tys in
+            let sizes = List.map sizeof precede in
+            let offset = List.fold_left (fun acc x -> acc + x) 0 sizes in
+            Basic_vec.push ssa (Load { rd; rs; offset; });
+            rd
+        
+        | _ -> failwith "riscv_ssa.ml: bad record type");
     
   (* Meaning: set the `pos`-th field of `record` to `field` *)
   | Cexpr_mutate { record; pos; field } ->
@@ -612,10 +619,10 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
       let cond = do_convert ssa cond in
 
-      let ifso_ssa = Basic_vec.make ~dummy:Nop 20 in 
+      let ifso_ssa = Basic_vec.empty () in 
       let ifso_result = do_convert ifso_ssa ifso in
 
-      let ifnot_ssa = Basic_vec.make ~dummy:Nop 20 in
+      let ifnot_ssa = Basic_vec.empty () in
       let ifnot_result =
         (match ifnot with
         | None -> unit
@@ -694,7 +701,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let exit = Printf.sprintf "exit_%s" loop in
 
       (* Generate body. `conts` will be filled by Cexpr_continue. *)
-      let body_ssa = Basic_vec.make ~dummy:Nop 32 in
+      let body_ssa = Basic_vec.empty () in
       let _ = do_convert body_ssa body in
 
       (* Start generating according to the template described above. *)
@@ -757,7 +764,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
   (* Assigns mutable variables. *)
   | Cexpr_assign { var; expr; ty } ->
       let rd = do_convert ssa expr in
-      let rs = { name = Ident.to_string var; ty = Mtype.T_bytes} in
+      let rs = { name = Ident.to_string var; ty = Mtype.T_bytes } in
       Basic_vec.push ssa (Store { rd; rs; offset = 0 });
       unit
 
@@ -765,14 +772,13 @@ let rec do_convert ssa (expr: Mcore.expr) =
   | Cexpr_record { fields; ty; } ->
       (* Allocate space for the record *)
       let rd = new_temp Mtype.T_bytes in
-      Basic_vec.push ssa (Malloc { rd; size = sizeof ty });
-
       let name =
         (match ty with
         | Mtype.T_constr id -> id
-        (* This must be a record *)
-        | _ -> assert false)
+        | _ -> failwith "riscv_ssa.ml: bad record construction")
       in
+
+      Basic_vec.push ssa (Malloc { rd; size = Hashtbl.find size_table name });
 
       (* Construct all its fields *)
       let visit ({ pos; expr; _ }: Mcore.field_def) =
@@ -789,6 +795,25 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let loop_name = Printf.sprintf "%s_%d" label.name label.stamp in
       Basic_vec.push ssa (Jump ("exit_" ^ loop_name));
       unit
+
+  | Cexpr_tuple { exprs; ty; _ } ->
+      let rd = new_temp ty in
+      let tys =
+        (match ty with
+        | Mtype.T_tuple { tys } -> tys
+        | _ -> failwith "riscv_ssa.ml: bad tuple")
+      in
+
+      let size = List.fold_left (fun acc x -> sizeof x + acc) 0 tys in
+      Basic_vec.push ssa (Malloc { rd; size });
+
+      let args = List.map (fun x -> do_convert ssa x) exprs in
+      let sizes = List.map (fun x -> sizeof x.ty) args |> Basic_lst.take (List.length args - 1) in
+      let offsets = 0 :: Basic_lst.cumsum sizes in
+      List.iter2 (fun arg offset ->
+        Basic_vec.push ssa (Store { rd = arg; rs = rd; offset })
+      ) args offsets;
+      rd
 
   | Cexpr_return _ ->
       prerr_endline "return";
@@ -808,10 +833,6 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
   | Cexpr_letrec _ ->
       prerr_endline "letrec";
-      unit
-
-  | Cexpr_tuple _ ->
-      prerr_endline "tuple";
       unit
 
   | Cexpr_record_update _ ->
@@ -840,9 +861,9 @@ let rec do_convert ssa (expr: Mcore.expr) =
       | C_string imm ->
           AssignStr { rd; imm; }
       | C_bool imm ->
-          AssignInt { rd; imm = Int64.of_int (if imm then 1 else 0); size = Bit8; signed = true; }
+          AssignInt { rd; imm = Int64.of_int (if imm then 1 else 0); size = Bit32; signed = true; }
       | C_char imm ->
-          AssignInt { rd; imm = Int64.of_int (Uchar.to_int imm); size = Bit8; signed = false; }
+          AssignInt { rd; imm = Int64.of_int (Uchar.to_int imm); size = Bit32; signed = false; }
       | C_int { v; _ } ->
           AssignInt { rd; imm = Int64.of_int32 v; size = Bit32; signed = true; }
       | C_int64 { v; _ } ->
@@ -857,8 +878,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
           AssignFP { rd; imm = v; size = Bit64; }
       | C_bytes { v; _ } ->
           AssignStr { rd; imm = v }
-      (* BigInt; currently not supported *)
-      | _ -> failwith "TODO: riscv_ssa.ml: bigint not supported"
+      | C_bigint _ -> failwith "TODO: riscv_ssa.ml: bigint not supported"
       ) in
       Basic_vec.push ssa instruction;
       rd
@@ -868,26 +888,35 @@ Converts given `expr` into a list of SSA instructions,
 along with the variable in which the result of this expression is stored.
 *)
 let convert_expr (expr: Mcore.expr) =
-  let ssa = Basic_vec.make ~dummy:Nop 20 in
+  let ssa = Basic_vec.empty () in
   let return = do_convert ssa expr in
   Basic_vec.push ssa (Return return);
   Basic_vec.map_into_list ssa (fun x -> x)
 
 
-let convert_toplevel (top: Mcore.top_item) =
+let convert_toplevel _start (top: Mcore.top_item) =
+  let var_of_param ({ binder; ty; _ } : Mcore.param) =
+    { name = Ident.to_string binder; ty }
+  in
+
   match top with
   | Ctop_fn { binder; func; export_info_; _ } ->
-    let var_of_param ({ binder; ty; _ } : Mcore.param) =
-      { name = Ident.to_string binder; ty }
-    in
-    let fn = Ident.to_string binder in
-    let args = List.map var_of_param func.params in
-    let body = convert_expr func.body in
-    if export_info_ != None then
-      prerr_endline "warning: export info is non-empty";
-    [
-      FnDecl { fn; args; body }
-    ]
+      let fn = Ident.to_string binder in
+      let args = List.map var_of_param func.params in
+      let body = convert_expr func.body in
+      if export_info_ != None then
+        prerr_endline "warning: export info is non-empty";
+      [ FnDecl { fn; args; body } ]
+
+  | Ctop_let { binder; expr; is_pub_; _ } ->
+      let name = Ident.to_string binder in
+      global_vars := Varset.add name !global_vars;
+
+      let rd = do_convert _start expr in
+      let var = { name = Ident.to_string binder; ty = rd.ty } in
+
+      Basic_vec.push _start (Store { rd; rs = var; offset = 0 });
+      [ GlobalVarDecl var ]
 
   (*
   No need to deal with stubs.
@@ -900,11 +929,15 @@ let convert_toplevel (top: Mcore.top_item) =
 
 let ssa_of_mcore (core: Mcore.t) =
   Basic_io.write_s "core.ir" (Mcore.sexp_of_t core);
+
+  (* Body of the function `_start`, which is the entry point *)
+  let _start = Basic_vec.empty () in
+
   (* Look through types, and calculate their field offsets *)
   update_types core.types;
 
   (* Deal with other functions *)
-  let body = List.map convert_toplevel core.body |> List.flatten in
+  let body = List.map (fun x -> convert_toplevel _start x) core.body |> List.flatten in
 
   (* Deal with main *)
   let with_main = match core.main with
@@ -915,4 +948,11 @@ let ssa_of_mcore (core: Mcore.t) =
       
     | None -> body
   in
-  with_main
+
+  (* Add _start *)
+  Basic_vec.push _start (Call { rd = unit; fn = "main"; args = [] });
+  Basic_vec.push _start (Return unit);
+
+  let start_body = Basic_vec.to_list _start in
+  let with_start = FnDecl { fn = "_start"; args = []; body = start_body } :: with_main in
+  with_start
