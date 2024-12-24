@@ -25,7 +25,7 @@ include struct
 end
 
 let type_repr = Stype.type_repr
-let type_var_list arity kind = Lst.init arity (fun _ -> Stype.new_type_var kind)
+let type_var_list arity kind = List.init arity (fun _ -> Stype.new_type_var kind)
 
 let check_occur (v : typ) (ty : typ) =
   let rec go (ty : typ) =

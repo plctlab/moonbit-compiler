@@ -13,16 +13,11 @@
 *)
 
 (**
-This file is re-implementing basic functionalities of the OCaml standard library `List`.
+This file introduces more facilities than the standard library.
 
-The intention is that, while OCaml places the function as the first argument
-(like `List.map (fun x -> x + 1) l`),
-this might be less readable for longer functions.
-
-Therefore, we reverse the argument order in Basic_lst.
-You could always choose between this version and the standard library version for more readable code.
-
-Additionally, this file also introduces more facilities than the standard library.
+You might find there are some functions whose order of arguments are different
+from OCaml standard library. Please avoid them, and replace them with the functions
+in standard `List` module when possible. Thank you.
 *)
 
 module Unsafe_external = Basic_unsafe_external
@@ -33,69 +28,13 @@ let map l f = List.map f l
 
 let has_string (l : string list) query = List.mem query l
 
-let rec map_combine l1 l2 f =
-  match (l1, l2) with
-  | [], [] -> []
-  | a1 :: l1, a2 :: l2 -> (f a1, a2) :: map_combine l1 l2 f
-  | _, _ -> invalid_arg __FUNCTION__
-
-let rec arr_list_combine_unsafe arr l i j acc f =
-  if i = j then acc
-  else
-    match l with
-    | [] -> invalid_arg __FUNCTION__
-    | h :: tl ->
-        (f arr.!(i), h) :: arr_list_combine_unsafe arr tl (i + 1) j acc f
-
-let combine_array_append arr l acc f =
-  let len = Array.length arr in
-  arr_list_combine_unsafe arr l 0 len acc f
-
-let combine_array arr l f =
-  let len = Array.length arr in
-  arr_list_combine_unsafe arr l 0 len [] f
-
-let rec arr_list_filter_map_unasfe arr l i j acc f =
-  if i = j then acc
-  else
-    match l with
-    | [] -> invalid_arg __FUNCTION__
-    | h :: tl -> (
-        match f arr.!(i) h with
-        | None -> arr_list_filter_map_unasfe arr tl (i + 1) j acc f
-        | Some v -> v :: arr_list_filter_map_unasfe arr tl (i + 1) j acc f)
-
-let array_list_filter_map arr l f =
-  let len = Array.length arr in
-  arr_list_filter_map_unasfe arr l 0 len [] f
-
-let rec map_split (xs : 'a list) (f : 'a -> 'b * 'c) : 'b list * 'c list =
+let rec map_split xs f =
   match xs with
   | [] -> ([], [])
   | x :: xs ->
       let c, d = f x in
       let cs, ds = map_split xs f in
       (c :: cs, d :: ds)
-
-let rec map_split_opt (xs : 'a list) (f : 'a -> 'b option * 'c option) :
-    'b list * 'c list =
-  match xs with
-  | [] -> ([], [])
-  | x :: xs -> (
-      let c, d = f x in
-      let cs, ds = map_split_opt xs f in
-      ( (match c with Some c -> c :: cs | None -> cs),
-        match d with Some d -> d :: ds | None -> ds ))
-
-let map_snd l f = List.map (fun (a, b) -> (a, f b)) l
-
-let rec map_last l f =
-  match l with
-  | [] -> []
-  | x1 :: [] ->
-      let y1 = f true x1 in [ y1 ]
-  | x1 :: tail ->
-      let y1 = f false x1 in y1 :: map_last tail f
 
 let rec mapi_aux lst i f tail =
   match lst with
@@ -116,154 +55,13 @@ let rec last xs =
 let rec map_append l1 l2 f =
   match l1 with
   | [] -> l2
-  | a0 :: [] -> f a0 :: l2
-  | [ a0; a1 ] ->
-      let b0 = f a0 in
-      let b1 = f a1 in
-      b0 :: b1 :: l2
-  | [ a0; a1; a2 ] ->
-      let b0 = f a0 in
-      let b1 = f a1 in
-      let b2 = f a2 in
-      b0 :: b1 :: b2 :: l2
-  | [ a0; a1; a2; a3 ] ->
-      let b0 = f a0 in
-      let b1 = f a1 in
-      let b2 = f a2 in
-      let b3 = f a3 in
-      b0 :: b1 :: b2 :: b3 :: l2
-  | [ a0; a1; a2; a3; a4 ] ->
-      let b0 = f a0 in
-      let b1 = f a1 in
-      let b2 = f a2 in
-      let b3 = f a3 in
-      let b4 = f a4 in
-      b0 :: b1 :: b2 :: b3 :: b4 :: l2
-  | a0 :: a1 :: a2 :: a3 :: a4 :: rest ->
-      let b0 = f a0 in
-      let b1 = f a1 in
-      let b2 = f a2 in
-      let b3 = f a3 in
-      let b4 = f a4 in
-      b0 :: b1 :: b2 :: b3 :: b4 :: map_append rest l2 f
+  | a :: tl -> f a :: map_append tl l2 f
 
-let rec fold_right l acc f =
-  match l with
-  | [] -> acc
-  | a0 :: [] -> f a0 acc
-  | [ a0; a1 ] -> f a0 (f a1 acc)
-  | [ a0; a1; a2 ] -> f a0 (f a1 (f a2 acc))
-  | [ a0; a1; a2; a3 ] -> f a0 (f a1 (f a2 (f a3 acc)))
-  | [ a0; a1; a2; a3; a4 ] -> f a0 (f a1 (f a2 (f a3 (f a4 acc))))
-  | a0 :: a1 :: a2 :: a3 :: a4 :: rest ->
-      f a0 (f a1 (f a2 (f a3 (f a4 (fold_right rest acc f)))))
+let rec fold_right l acc f = List.fold_right f l acc
 
-let rec fold_right2 l r acc f =
-  match (l, r) with
-  | [], [] -> acc
-  | a0 :: [], b0 :: [] -> f a0 b0 acc
-  | [ a0; a1 ], [ b0; b1 ] -> f a0 b0 (f a1 b1 acc)
-  | [ a0; a1; a2 ], [ b0; b1; b2 ] -> f a0 b0 (f a1 b1 (f a2 b2 acc))
-  | [ a0; a1; a2; a3 ], [ b0; b1; b2; b3 ] ->
-      f a0 b0 (f a1 b1 (f a2 b2 (f a3 b3 acc)))
-  | [ a0; a1; a2; a3; a4 ], [ b0; b1; b2; b3; b4 ] ->
-      f a0 b0 (f a1 b1 (f a2 b2 (f a3 b3 (f a4 b4 acc))))
-  | a0 :: a1 :: a2 :: a3 :: a4 :: arest, b0 :: b1 :: b2 :: b3 :: b4 :: brest ->
-      f a0 b0
-        (f a1 b1 (f a2 b2 (f a3 b3 (f a4 b4 (fold_right2 arest brest acc f)))))
-  | _, _ -> invalid_arg __FUNCTION__
+let rec fold_right2 l r acc f = List.fold_right2 f l r acc
 
-let rec fold_right3 l r last acc f =
-  match (l, r, last) with
-  | [], [], [] -> acc
-  | a0 :: [], b0 :: [], c0 :: [] -> f a0 b0 c0 acc
-  | [ a0; a1 ], [ b0; b1 ], [ c0; c1 ] -> f a0 b0 c0 (f a1 b1 c1 acc)
-  | [ a0; a1; a2 ], [ b0; b1; b2 ], [ c0; c1; c2 ] ->
-      f a0 b0 c0 (f a1 b1 c1 (f a2 b2 c2 acc))
-  | [ a0; a1; a2; a3 ], [ b0; b1; b2; b3 ], [ c0; c1; c2; c3 ] ->
-      f a0 b0 c0 (f a1 b1 c1 (f a2 b2 c2 (f a3 b3 c3 acc)))
-  | [ a0; a1; a2; a3; a4 ], [ b0; b1; b2; b3; b4 ], [ c0; c1; c2; c3; c4 ] ->
-      f a0 b0 c0 (f a1 b1 c1 (f a2 b2 c2 (f a3 b3 c3 (f a4 b4 c4 acc))))
-  | ( a0 :: a1 :: a2 :: a3 :: a4 :: arest,
-      b0 :: b1 :: b2 :: b3 :: b4 :: brest,
-      c0 :: c1 :: c2 :: c3 :: c4 :: crest ) ->
-      f a0 b0 c0
-        (f a1 b1 c1
-           (f a2 b2 c2
-              (f a3 b3 c3 (f a4 b4 c4 (fold_right3 arest brest crest acc f)))))
-  | _, _, _ -> invalid_arg __FUNCTION__
-
-let rec map2i_aux l r f i =
-  match (l, r) with
-  | [], [] -> []
-  | a0 :: [], b0 :: [] -> [ f i a0 b0 ]
-  | [ a0; a1 ], [ b0; b1 ] ->
-      let c0 = f i a0 b0 in
-      let c1 = f (i + 1) a1 b1 in
-      [ c0; c1 ]
-  | [ a0; a1; a2 ], [ b0; b1; b2 ] ->
-      let c0 = f i a0 b0 in
-      let c1 = f (i + 1) a1 b1 in
-      let c2 = f (i + 2) a2 b2 in
-      [ c0; c1; c2 ]
-  | [ a0; a1; a2; a3 ], [ b0; b1; b2; b3 ] ->
-      let c0 = f i a0 b0 in
-      let c1 = f (i + 1) a1 b1 in
-      let c2 = f (i + 2) a2 b2 in
-      let c3 = f (i + 3) a3 b3 in
-      [ c0; c1; c2; c3 ]
-  | [ a0; a1; a2; a3; a4 ], [ b0; b1; b2; b3; b4 ] ->
-      let c0 = f i a0 b0 in
-      let c1 = f (i + 1) a1 b1 in
-      let c2 = f (i + 2) a2 b2 in
-      let c3 = f (i + 3) a3 b3 in
-      let c4 = f (i + 4) a4 b4 in
-      [ c0; c1; c2; c3; c4 ]
-  | a0 :: a1 :: a2 :: a3 :: a4 :: arest, b0 :: b1 :: b2 :: b3 :: b4 :: brest ->
-      let c0 = f i a0 b0 in
-      let c1 = f (i + 1) a1 b1 in
-      let c2 = f (i + 2) a2 b2 in
-      let c3 = f (i + 3) a3 b3 in
-      let c4 = f (i + 4) a4 b4 in
-      c0 :: c1 :: c2 :: c3 :: c4 :: map2i_aux arest brest f (i + 5)
-  | _, _ -> invalid_arg __FUNCTION__
-
-let map2i l r f = map2i_aux l r f 0
-
-let rec map2 l r f =
-  match (l, r) with
-  | [], [] -> []
-  | a0 :: [], b0 :: [] -> [ f a0 b0 ]
-  | [ a0; a1 ], [ b0; b1 ] ->
-      let c0 = f a0 b0 in
-      let c1 = f a1 b1 in
-      [ c0; c1 ]
-  | [ a0; a1; a2 ], [ b0; b1; b2 ] ->
-      let c0 = f a0 b0 in
-      let c1 = f a1 b1 in
-      let c2 = f a2 b2 in
-      [ c0; c1; c2 ]
-  | [ a0; a1; a2; a3 ], [ b0; b1; b2; b3 ] ->
-      let c0 = f a0 b0 in
-      let c1 = f a1 b1 in
-      let c2 = f a2 b2 in
-      let c3 = f a3 b3 in
-      [ c0; c1; c2; c3 ]
-  | [ a0; a1; a2; a3; a4 ], [ b0; b1; b2; b3; b4 ] ->
-      let c0 = f a0 b0 in
-      let c1 = f a1 b1 in
-      let c2 = f a2 b2 in
-      let c3 = f a3 b3 in
-      let c4 = f a4 b4 in
-      [ c0; c1; c2; c3; c4 ]
-  | a0 :: a1 :: a2 :: a3 :: a4 :: arest, b0 :: b1 :: b2 :: b3 :: b4 :: brest ->
-      let c0 = f a0 b0 in
-      let c1 = f a1 b1 in
-      let c2 = f a2 b2 in
-      let c3 = f a3 b3 in
-      let c4 = f a4 b4 in
-      c0 :: c1 :: c2 :: c3 :: c4 :: map2 arest brest f
-  | _, _ -> invalid_arg __FUNCTION__
+let rec map2 l r f = List.map2 f l r
 
 let rec fold_left_with_offset l accu i f =
   match l with
@@ -302,64 +100,10 @@ let rec same_length xs ys =
   | _ :: xs, _ :: ys -> same_length xs ys
   | _, _ -> false
 
-let rec length_greater_than xs ys =
-  match (xs, ys) with
-  | [], _ -> false
-  | _ :: xs, _ :: ys -> length_greater_than xs ys
-  | _, [] -> true
-
-let init n f =
-  match n with
-  | 0 -> []
-  | 1 ->
-      let a0 = f 0 in
-      [ a0 ]
-  | 2 ->
-      let a0 = f 0 in
-      let a1 = f 1 in
-      [ a0; a1 ]
-  | 3 ->
-      let a0 = f 0 in
-      let a1 = f 1 in
-      let a2 = f 2 in
-      [ a0; a1; a2 ]
-  | 4 ->
-      let a0 = f 0 in
-      let a1 = f 1 in
-      let a2 = f 2 in
-      let a3 = f 3 in
-      [ a0; a1; a2; a3 ]
-  | 5 ->
-      let a0 = f 0 in
-      let a1 = f 1 in
-      let a2 = f 2 in
-      let a3 = f 3 in
-      let a4 = f 4 in
-      [ a0; a1; a2; a3; a4 ]
-  | _ -> Array.to_list (Array.init n f)
-
-let rec rev_append l1 l2 =
-  match l1 with
-  | [] -> l2
-  | a0 :: [] -> a0 :: l2
-  | [ a0; a1 ] -> a1 :: a0 :: l2
-  | a0 :: a1 :: a2 :: rest -> rev_append rest (a2 :: a1 :: a0 :: l2)
-
-let rev l = rev_append l []
-
-let rec small_split_at n acc l =
-  if n <= 0 then (rev acc, l)
-  else
-    match l with
-    | x :: xs -> small_split_at (n - 1) (x :: acc) xs
-    | _ -> invalid_arg __FUNCTION__
-
-let split_at l n = small_split_at n [] l
-
 let rec split_at_last_aux acc x =
   match x with
   | [] -> invalid_arg __FUNCTION__
-  | x :: [] -> (rev acc, x)
+  | x :: [] -> (List.rev acc, x)
   | y0 :: ys -> split_at_last_aux (y0 :: acc) ys
 
 let split_at_last (x : 'a list) =
@@ -399,14 +143,14 @@ let rec rev_map_append l1 l2 f =
 
 let rec flat_map_aux f acc append lx =
   match lx with
-  | [] -> rev_append acc append
+  | [] -> List.rev_append acc append
   | a0 :: rest ->
       let new_acc =
         match f a0 with
         | [] -> acc
         | a0 :: [] -> a0 :: acc
         | [ a0; a1 ] -> a1 :: a0 :: acc
-        | a0 :: a1 :: a2 :: rest -> rev_append rest (a2 :: a1 :: a0 :: acc)
+        | a0 :: a1 :: a2 :: rest -> List.rev_append rest (a2 :: a1 :: a0 :: acc)
       in
       flat_map_aux f new_acc append rest
 
@@ -415,36 +159,20 @@ let flat_map_append lx ~init:append ~f = flat_map_aux f [] append lx
 
 let rec flat_map_auxi f acc append lx index =
   match lx with
-  | [] -> rev_append acc append
+  | [] -> List.rev_append acc append
   | a0 :: rest ->
       let new_acc =
         match f index a0 with
         | [] -> acc
         | a0 :: [] -> a0 :: acc
         | [ a0; a1 ] -> a1 :: a0 :: acc
-        | a0 :: a1 :: a2 :: rest -> rev_append rest (a2 :: a1 :: a0 :: acc)
+        | a0 :: a1 :: a2 :: rest -> List.rev_append rest (a2 :: a1 :: a0 :: acc)
       in
       flat_map_auxi f new_acc append rest (index + 1)
 
 let concat_mapi lx f = flat_map_auxi f [] [] lx 0
 let flat_mapi_append lx ~init:append ~f = flat_map_auxi f [] append lx 0
 
-let rec length_compare l n =
-  if n < 0 then `Gt
-  else
-    match l with
-    | _ :: xs -> length_compare xs (n - 1)
-    | [] -> if n = 0 then `Eq else `Lt
-
-let rec length_ge l n =
-  if n > 0 then match l with _ :: tl -> length_ge tl (n - 1) | [] -> false
-  else true
-
-let rec length_larger_than_n xs ys n =
-  match (xs, ys) with
-  | _, [] -> length_compare xs n = `Eq
-  | _ :: xs, _ :: ys -> length_larger_than_n xs ys n
-  | [], _ -> false
 
 let rec group (eq : 'a -> 'a -> bool) lst =
   match lst with [] -> [] | x :: xs -> aux eq x (group eq xs)
@@ -455,7 +183,7 @@ and aux eq (x : 'a) (xss : 'a list list) : 'a list list =
   | (y0 :: _ as y) :: ys -> if eq x y0 then (x :: y) :: ys else y :: aux eq x ys
   | _ :: _ -> assert false
 
-let stable_group lst eq = group eq lst |> rev
+let stable_group lst eq = group eq lst |> List.rev
 
 let rec drop h n =
   if n < 0 then invalid_arg __FUNCTION__
@@ -718,9 +446,18 @@ let stable_sort_as_array l ~cmp =
       arr
 
 let rec unsafe_take n xs =
-  match xs with
-  | [] -> invalid_arg __FUNCTION__
-  | x :: rest -> if n = 1 then [ x ] else x :: unsafe_take (n - 1) rest
+  match xs, n with
+  | _, 0 -> []
+  | [], _ -> invalid_arg __FUNCTION__
+  | x :: tl, _ -> x :: unsafe_take (n - 1) tl
 
 let take n xs =
   if n >= List.length xs then xs else if n <= 0 then [] else unsafe_take n xs
+
+(** Accumulated sum, same as numpy.cumsum *)
+let cumsum lst =
+  let rec aux acc sum = function
+    | [] -> List.rev acc
+    | x :: xs -> aux ((sum + x) :: acc) (sum + x) xs
+  in
+  aux [] 0 lst
