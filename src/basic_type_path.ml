@@ -297,7 +297,7 @@ let export_name ?cur_pkg_name t = name_aux ~compress:false ~cur_pkg_name t
 let short_name ~cur_pkg_name t = name_aux ~compress:true ~cur_pkg_name t
 
 let sexp_of_t t =
-  S.Atom (short_name ~cur_pkg_name:(Some !Config.current_package) t)
+  S.Atom (export_name t)
 
 let toplevel_type ~pkg t = Toplevel { pkg; id = t }
 let constr ~ty ~tag = Constr { ty; tag }
