@@ -29,29 +29,35 @@ type r2_type = {
   rs1: var;
 }
 
-(** Calls function named `fn` with args `args`, and store the result in `rd`. *)
+(** Calls function named `fn` with arguments `args`, and store the result in `rd`. *)
 type call_data = {
   rd: var;
   fn: string;
   args: var list;
 }
 
-(** Lengths of immediates. No need to distinguish smaller bitlengths. *)
-type imm_type = Bit32 | Bit64
+(** Call function pointer with address `rs` and arguments `args`, and returns in `rd` *)
+type call_indirect = {
+  rd: var;
+  rs: var;
+  args: var list;
+}
 
-(** Assigns (un-)signed integer `imm` to `rd`. *)
+(**
+Assigns (un-)signed integer `imm` to `rd`.
+
+We needn't care about immediate sizes.
+Those should be handled in arithmetic operations.
+*)
 type assign_int = {
   rd: var;
   imm: int64;
-  size: imm_type;
-  signed: bool;
 }
 
 (** Assigns floating point number `imm` to `rd`. *)
 type assign_fp = {
   rd: var;
   imm: float;
-  size: imm_type;
 }
 
 (**
@@ -93,13 +99,17 @@ type phi = {
   rs: (var * string) list;
 }
 
+type extern_array = {
+  label: string;
+  values: string list;
+}
+
 type malloc = {
   rd: var;
   size: int;
 }
 
-(** `entry` is the first basic block we'll encounter in this function. *)
-and fn = {
+type fn = {
   fn: string;
   args: var list;
   body: t list;
@@ -145,6 +155,7 @@ and t =
 | AssignInt of assign_int
 | AssignFP of assign_fp
 | AssignStr of assign_str
+| AssignLabel of assign_str
 | Assign of assign
 | Load of mem_access
 | Store of mem_access
@@ -153,8 +164,10 @@ and t =
 | Label of string
 | Phi of phi
 | FnDecl of fn
-| GlobalVarDecl of var    (* See notes below *)
-| CallExtern of call_data (* Call a C function *)
+| GlobalVarDecl of var          (* See notes below *)
+| Vtable of extern_array        (* An array of labels in `.data` section *)
+| CallExtern of call_data       (* Call a C function *)
+| CallIndirect of call_indirect
 | Malloc of malloc
 | Return of var
 | Nop
@@ -200,30 +213,29 @@ let to_string t =
     | FNeq r -> rtype "!=." r
     | FNeg { rd; rs1 } -> Printf.sprintf "%s = -%s" (to_string rd) rs1.name
 
-    | Call { rd; fn; args }
-    | CallExtern { rd; fn; args } ->
+    | Call { rd; fn; args } ->
         let args_list = String.concat ", " (List.map (fun x -> x.name) args) in
         Printf.sprintf "%s = call %s (%s)" (to_string rd) fn args_list
 
-    | AssignInt { rd; imm; size; signed } ->
-        (* We follow C convention of representing literals. *)
-        let suffix = (match (size, signed) with
-          | (Bit32, true) -> ""
-          | (Bit64, true) -> "ll"
-          | (Bit32, false) -> "u"
-          | (Bit64, false) -> "ull")
-        in 
-        Printf.sprintf "%s = %s%s" (to_string rd) (Int64.to_string imm) suffix
+    | CallExtern { rd; fn; args } ->
+        let args_list = String.concat ", " (List.map (fun x -> x.name) args) in
+        Printf.sprintf "%s = call_libc %s (%s)" (to_string rd) fn args_list
 
-    | AssignFP { rd; imm; size; } ->
-        let suffix = (match size with
-          | Bit32 -> "f"
-          | Bit64 -> "")
-        in
-        Printf.sprintf "%s = %f%s" (to_string rd) imm suffix
+    | CallIndirect { rd; rs; args } ->
+        let args_list = String.concat ", " (List.map (fun x -> x.name) args) in
+        Printf.sprintf "%s = call_indirect %s (%s)" (to_string rd) rs.name args_list
+
+    | AssignInt { rd; imm; } ->
+        Printf.sprintf "%s = %s" (to_string rd) (Int64.to_string imm)
+
+    | AssignFP { rd; imm; } ->
+        Printf.sprintf "%s = %f" (to_string rd) imm
     
     | AssignStr { rd; imm; } ->
         Printf.sprintf "%s = \"%s\"" (to_string rd) imm
+    
+    | AssignLabel { rd; imm; } ->
+        Printf.sprintf "%s = label %s" (to_string rd) imm
 
     | Assign { rd; rs; } ->
         Printf.sprintf "%s = %s" (to_string rd) rs.name
@@ -258,6 +270,9 @@ let to_string t =
 
     | GlobalVarDecl var ->
         Printf.sprintf "global %s\n" (to_string var);
+
+    | Vtable { label; values } ->
+        Printf.sprintf "global array %s:\n  %s\n" label (String.concat ", " values)
 
     | Return var ->
         Printf.sprintf "return %s" var.name
@@ -294,35 +309,48 @@ module Varset = Set.Make(String)
 
 let global_vars = ref Varset.empty
 
+(** Offset of each field in a record type. *)
 let offset_table = Hashtbl.create 64
+
+(** Size of each record type. *)
 let size_table = Hashtbl.create 64
 
+(** All methods in vtable for each type. *)
+let trait_table = Hashtbl.create 64
+
+(** The vtable offset for (type, trait). *)
+let trait_offset = Hashtbl.create 64
+
+(** Indices of arguments that are trait types for each function, along with their types. *)
+let traited_args = Hashtbl.create 64
+
 (** Get offset of the `pos`-th field in the record type called `name`. *)
-let offsetof name pos = Hashtbl.find offset_table (name, pos)
+let offsetof ty pos = Hashtbl.find offset_table (ty, pos)
 
+let is_trait ty = match ty with
+| Mtype.T_trait _ -> true
+| _ -> false
 
-(** This assumes RISCV64. Perhaps support 32 as well in future? *)
-let rec sizeof ty =
-  let pointer_size = 8 in
+let pointer_size = 8
 
-  match ty with
-  | Mtype.T_bool -> 1
-  | Mtype.T_byte -> 1
-  | Mtype.T_bytes -> pointer_size
-  | Mtype.T_char -> 1
-  | Mtype.T_double -> 8
-  | Mtype.T_float -> 4
-  | Mtype.T_func _ -> pointer_size
-  | Mtype.T_int -> 4
-  | Mtype.T_int64 -> 8
-  | Mtype.T_string -> pointer_size
-  | Mtype.T_uint -> 4
-  | Mtype.T_uint64 -> 8
-  | Mtype.T_unit -> 0
-  | Mtype.T_tuple _ -> pointer_size
-  | Mtype.T_constr id -> pointer_size
-  | Mtype.T_fixedarray _ -> pointer_size
-  | _ -> failwith "riscv_ssa.ml: cannot calculate size"
+let rec sizeof ty = match ty with
+| Mtype.T_bool -> 1
+| Mtype.T_byte -> 1
+| Mtype.T_bytes -> pointer_size
+| Mtype.T_char -> 1
+| Mtype.T_double -> 8
+| Mtype.T_float -> 4
+| Mtype.T_func _ -> pointer_size
+| Mtype.T_int -> 4
+| Mtype.T_int64 -> 8
+| Mtype.T_string -> pointer_size
+| Mtype.T_uint -> 4
+| Mtype.T_uint64 -> 8
+| Mtype.T_unit -> 0
+| Mtype.T_tuple _ -> pointer_size
+| Mtype.T_constr id -> pointer_size
+| Mtype.T_fixedarray _ -> pointer_size
+| _ -> failwith "riscv_ssa.ml: cannot calculate size"
 
 (** Maps all result registers with `fd` and all operands with `fs`. *)
 let rec reg_map fd fs t = match t with
@@ -351,9 +379,11 @@ let rec reg_map fd fs t = match t with
 | FNeg { rd; rs1 } -> FNeg { rd = fd rd; rs1 = fs rs1 }
 | Call { rd; fn; args } -> Call { rd = fd rd; fn; args = List.map fs args }
 | CallExtern { rd; fn; args } -> CallExtern { rd = fd rd; fn; args = List.map fs args }
-| AssignInt { rd; imm; size; signed } -> AssignInt { rd = fd rd; imm; size; signed }
-| AssignFP { rd; imm; size } -> AssignFP { rd = fd rd; imm; size; }
+| CallIndirect { rd; rs; args } -> CallIndirect { rd = fd rd; rs = fs rs; args = List.map fs args }
+| AssignInt { rd; imm; } -> AssignInt { rd = fd rd; imm; }
+| AssignFP { rd; imm; } -> AssignFP { rd = fd rd; imm; }
 | AssignStr { rd; imm } -> AssignStr { rd = fd rd; imm; }
+| AssignLabel { rd; imm } -> AssignLabel { rd = fd rd; imm; }
 | Assign { rd; rs } -> Assign { rd = fd rd; rs = fs rs }
 | Load { rd; rs; offset } -> Load { rd = fd rd; rs = fs rs; offset }
 | Store { rd; rs; offset } -> Load { rd = fs rd; rs = fs rs; offset }
@@ -363,6 +393,7 @@ let rec reg_map fd fs t = match t with
 | Phi { rd; rs } -> Phi { rd = fd rd; rs = List.map (fun (x, name) -> (fs x, name)) rs }
 | FnDecl { fn; args; body } -> FnDecl { fn; args; body = List.map (fun x -> reg_map fd fs x) body } 
 | GlobalVarDecl var -> GlobalVarDecl var
+| Vtable arr -> Vtable arr
 | Malloc { rd; size } -> Malloc { rd = fd rd; size }
 | Return var -> Return (fs var)
 | Nop -> Nop
@@ -432,7 +463,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       let buf_size = if length = 0 then 0 else length * (sizeof (List.hd args).ty) in
       Basic_vec.push ssa (Malloc { rd; size = 12 });
       Basic_vec.push ssa (Malloc { rd = buf; size = buf_size });
-      Basic_vec.push ssa (AssignInt { rd = len; imm = Int64.of_int length; size = Bit32; signed = true });
+      Basic_vec.push ssa (AssignInt { rd = len; imm = Int64.of_int length; });
       Basic_vec.push ssa (Store { rd = buf; rs = rd; offset = 0 });
       Basic_vec.push ssa (Store { rd = len; rs = rd; offset = 8 });
 
@@ -457,7 +488,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
         let offset = new_temp Mtype.T_int in
 
         (* Same as `rd = *(arr + sizeof(T) * index)` *)
-        Basic_vec.push ssa (AssignInt { rd = sz; imm = Int64.of_int size; size = Bit32; signed = true });
+        Basic_vec.push ssa (AssignInt { rd = sz; imm = Int64.of_int size; });
         Basic_vec.push ssa (Mul { rd = offset; rs1 = sz; rs2 = index });
         Basic_vec.push ssa (Add { rd = addr; rs1 = arr; rs2 = offset });
         Basic_vec.push ssa (Load { rd; rs = addr; offset = 0 });
@@ -478,33 +509,40 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
             let sz = new_temp Mtype.T_int in
             let length = new_temp Mtype.T_int in
             (* Same as `rd = malloc(sizeof(T) * len)` *)
-            Basic_vec.push ssa (AssignInt { rd = sz; imm = Int64.of_int size; size = Bit32; signed = true });
+            Basic_vec.push ssa (AssignInt { rd = sz; imm = Int64.of_int size; });
             Basic_vec.push ssa (Mul { rd = length; rs1 = sz; rs2 = len });
             Basic_vec.push ssa (CallExtern { rd; fn = "malloc"; args = [length] })
 
       (* Haven't observed occurrence of other values of `kind` *)
       | _ -> failwith "riscv_ssa.ml: unrecognized config of fixed array make")
 
+  | Pcall_object_method { method_index; _ } ->
+      (* We've guaranteed that the vtable pointer is pointing to the correct place. *)
+      (* So it's just calling index * ptr_size + *vtb. *)
+      let vtb_offset = method_index * pointer_size in
+      let arg = List.hd args in
+
+      (* Temporaries in SSA *)
+      let vtb = new_temp Mtype.T_bytes in
+      let fn_addr = new_temp Mtype.T_bytes in
+      let load = new_temp Mtype.T_int in
+
+      Basic_vec.push ssa (Load { rd = vtb; rs = arg; offset = -pointer_size });
+      Basic_vec.push ssa (AssignInt { rd = load; imm = Int64.of_int vtb_offset });
+      Basic_vec.push ssa (Add { rd = fn_addr; rs1 = vtb; rs2 = load });
+      (* The whole set of args (including self) is needed. *)
+      Basic_vec.push ssa (CallIndirect { rd; rs = fn_addr; args })
+
   | Pignore -> ()
 
   | Pidentity ->
-      if List.length args != 1 then
-        failwith "riscv_ssa.ml: bad call to 'Pidentity'"
-      else
-        Basic_vec.push ssa (Assign { rd; rs = List.hd args })
+      Basic_vec.push ssa (Assign { rd; rs = List.hd args })
   
   | Pprintln ->
-      if List.length args != 1 then
-        failwith "riscv_ssa.ml: bad call to 'Pprintln'"
-      else
-        Basic_vec.push ssa (CallExtern { rd; fn = "puts"; args })
+      Basic_vec.push ssa (CallExtern { rd; fn = "puts"; args })
 
-  | Pbyteslength
   | Pstringlength ->
-      if List.length args != 1 then
-        failwith "riscv_ssa.ml: bad call to 'Pprintln'"
-      else
-        Basic_vec.push ssa (CallExtern { rd; fn = "strlen"; args })
+      Basic_vec.push ssa (CallExtern { rd; fn = "strlen"; args })
   
   | _ -> Basic_vec.push ssa (Call { rd; fn = (Primitive.sexp_of_prim prim |> S.to_string); args })
 
@@ -518,22 +556,42 @@ let update_types ({ defs; _ }: Mtype.defs) =
     | Mtype.Placeholder -> ()
     | Mtype.Externref -> ()
 
-    (** We don't care about declarations in traits. *)
+    (* We don't care about declarations in traits. *)
     | Mtype.Trait _ -> ()
 
-    (** Calculate offset of fields in record types. *)
+    (* Calculate offset of fields in record types. *)
     | Mtype.Record { fields } -> 
+        let ty = Mtype.T_constr name in
         let extract (x: Mtype.field_info) = x.field_type in
         let field_types = List.map extract fields in
         let field_sizes = List.map sizeof field_types in
         let offset = ref 0 in
         let offsets = List.map (fun x -> let y = !offset in offset := x + !offset; y) field_sizes in
-        List.iteri (fun i x -> Hashtbl.add offset_table (name, i) x) offsets;
-        Hashtbl.add size_table name !offset
+        List.iteri (fun i x -> Hashtbl.add offset_table (ty, i) x) offsets;
+        Hashtbl.add size_table ty !offset;
+        Hashtbl.add trait_table ty (Basic_vec.empty ())
     
     | _ -> failwith "TODO: riscv_ssa.ml: cannot deal with this type"
   in
   List.iter visit types
+
+(** Record, for each type that implements some trait, which methods of that type are for the trait *)
+let record_traits (methods: Object_util.t) =
+  Basic_hash_gen.iter methods (fun (key, value) -> 
+    let trait_name = Basic_type_path.sexp_of_t key.trait |> S.to_string in
+    let ty = value.self_ty in
+
+    let get_method_name = fun (x: Object_util.object_method_item) -> Ident.to_string x.method_id in
+    let methods = List.map get_method_name value.methods in
+
+    let vtb_size = Hashtbl.find trait_table ty |> Basic_vec.length in
+
+    (* Note: traits are originally converted from Stype.T_trait to Mtype.T_trait, *)
+    (* and the former takes a Basic_type_path, as expected. *)
+    (* However, the conversion function needs additional information which is unknown at this stage. *)
+    Hashtbl.add trait_offset (ty, Mtype.T_trait trait_name) vtb_size;
+    Basic_vec.append (Hashtbl.find trait_table ty) (Basic_vec.of_list methods)
+  )
 
 (**
 This is reserved for `continue`s.
@@ -574,9 +632,25 @@ let rec do_convert ssa (expr: Mcore.expr) =
         rd
   
       
-  (* Not quite sure about this; is it simply a variable access? *)
-  | Cexpr_object { self; } ->
-      do_convert ssa self
+  (* A cast from a type into some trait. *)
+  | Cexpr_object { self; methods_key = { trait; _ } ; _ } ->
+      let obj = do_convert ssa self in
+      let ty = obj.ty in
+
+      let trait_name = Basic_type_path.sexp_of_t trait |> S.to_string in
+      let delta = Hashtbl.find trait_offset (ty, Mtype.T_trait trait_name) in
+
+      (* Temporary variables used in SSA *)
+      let load = new_temp Mtype.T_int in
+      let vtb = new_temp Mtype.T_bytes in
+      let altered = new_temp Mtype.T_bytes in
+
+      (* Alter the vtable offset according to the trait *)
+      Basic_vec.push ssa (Load { rd = vtb; rs = obj; offset = 0 });
+      Basic_vec.push ssa (AssignInt { rd = load; imm = Int64.of_int delta });
+      Basic_vec.push ssa (Add { rd = altered; rs1 = vtb; rs2 = load });
+      Basic_vec.push ssa (Store { rd = altered; rs = obj; offset = 0 });
+      obj
   
   (* Primitives are intrinsic functions. *)
   (* We tidy some of these up, and compile others into functions. *)
@@ -600,7 +674,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
           Basic_vec.push ssa (Jump ifexit);
 
           Basic_vec.push ssa (Label ifnot);
-          Basic_vec.push ssa (AssignInt { rd = t2; imm = 0L; size = Bit32; signed = true });
+          Basic_vec.push ssa (AssignInt { rd = t2; imm = 0L; });
           Basic_vec.push ssa (Jump ifexit);
 
           Basic_vec.push ssa (Label ifexit);
@@ -618,7 +692,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
           Basic_vec.push ssa (Branch { cond; ifso; ifnot });
 
           Basic_vec.push ssa (Label ifso);
-          Basic_vec.push ssa (AssignInt { rd = t1; imm = 1L; size = Bit32; signed = true });
+          Basic_vec.push ssa (AssignInt { rd = t1; imm = 1L; });
           Basic_vec.push ssa (Jump ifexit);
 
           Basic_vec.push ssa (Label ifnot);
@@ -655,8 +729,41 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let rd = new_temp ty in
       let fn = Ident.to_string func in
       let args = List.map (fun expr -> do_convert ssa expr) args in
+
+      (* Alter the vtable offset to the corresponding trait *)
+      let before = Basic_vec.empty () in
+      let after = Basic_vec.empty () in
+      (if Hashtbl.mem traited_args fn then
+        let indices = Hashtbl.find traited_args fn in
+        List.iter (fun (i, trait_ty) ->
+          let arg = List.nth args i in
+          if not (is_trait arg.ty) then (
+            let delta = Hashtbl.find trait_offset (arg.ty, trait_ty) in
+
+            (* Trait themselves can't derive another trait, *)
+            (* so no worries about diamond inheritance *)
+            let load = new_temp Mtype.T_int in
+            let vtb = new_temp Mtype.T_bytes in
+            let altered = new_temp Mtype.T_bytes in
+            let offset = -pointer_size in
+
+            (* Before calling, we must advance the pointer to the correct offset *)
+            Basic_vec.push before (Load { rd = vtb; rs = arg; offset });
+            Basic_vec.push before (AssignInt { rd = load; imm = Int64.of_int delta });
+            Basic_vec.push before (Add { rd = altered; rs1 = vtb; rs2 = load });
+            Basic_vec.push before (Store { rd = altered; rs = arg; offset });
+
+            (* After the function returns, we must put it back *)
+            Basic_vec.push after (Store { rd = vtb; rs = arg; offset })
+          )
+        ) indices
+      );
+      
+      Basic_vec.append ssa before;
       Basic_vec.push ssa (Call { rd; fn; args });
+      Basic_vec.append ssa after;
       rd
+
 
   | Cexpr_sequence { expr1; expr2; _ } ->
       do_convert ssa expr1 |> ignore;
@@ -669,8 +776,8 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let rs = do_convert ssa record in
       
       (match rs.ty with
-        | T_constr name ->
-            let offset = offsetof name pos in
+        | T_constr _ ->
+            let offset = offsetof rs.ty pos in
             Basic_vec.push ssa (Load { rd; rs; offset; });
             rd
           
@@ -688,13 +795,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
     let rs = do_convert ssa record in
     let rd = do_convert ssa field in
     
-    let name =
-      (match rs.ty with
-      | T_constr id -> id
-      | _ -> failwith "riscv_ssa.ml: can only mutate record types")
-    in
-    
-    let offset = offsetof name pos in
+    let offset = offsetof rs.ty pos in
     Basic_vec.push ssa (Store { rd; rs; offset; });
     unit
 
@@ -855,19 +956,35 @@ let rec do_convert ssa (expr: Mcore.expr) =
   (* Builds a record type. *)
   | Cexpr_record { fields; ty; } ->
       (* Allocate space for the record *)
-      let rd = new_temp Mtype.T_bytes in
-      let name =
-        (match ty with
-        | Mtype.T_constr id -> id
-        | _ -> failwith "riscv_ssa.ml: bad record construction")
-      in
+      let rd = new_temp ty in
 
-      Basic_vec.push ssa (Malloc { rd; size = Hashtbl.find size_table name });
+      let has_vtable = Hashtbl.mem trait_table ty in
+      let size = Hashtbl.find size_table ty in
+
+      (if has_vtable then
+        let beginning = new_temp ty in
+        let load = new_temp Mtype.T_int in
+
+        (* We construct vtable before every field *)
+        (* and let `rd` point at where fields start *)
+        (* in order to unite traited and untraited types *)
+        Basic_vec.push ssa (Malloc { rd = beginning; size = size + pointer_size });
+        Basic_vec.push ssa (AssignInt { rd = load; imm = Int64.of_int pointer_size });
+        Basic_vec.push ssa (Sub { rd; rs1 = beginning; rs2 = load });
+
+        (* Load in vtable *)
+        let vtb = new_temp Mtype.T_bytes in
+        Basic_vec.push ssa (AssignLabel { rd = vtb; imm = "vtable_" ^ (Mtype.to_string ty) });
+        Basic_vec.push ssa (Store { rd = vtb; rs = rd; offset = -pointer_size })
+      else
+        (* No vtable; everything normal *)
+        Basic_vec.push ssa (Malloc { rd; size });
+      );
 
       (* Construct all its fields *)
       let visit ({ pos; expr; _ }: Mcore.field_def) =
         let result = do_convert ssa expr in
-        let offset = offsetof name pos in 
+        let offset = offsetof ty pos in 
         Basic_vec.push ssa (Store { rd = result; rs = rd; offset })
       in
 
@@ -945,27 +1062,37 @@ let rec do_convert ssa (expr: Mcore.expr) =
       | C_string imm ->
           AssignStr { rd; imm; }
       | C_bool imm ->
-          AssignInt { rd; imm = Int64.of_int (if imm then 1 else 0); size = Bit32; signed = true; }
+          AssignInt { rd; imm = Int64.of_int (if imm then 1 else 0); }
       | C_char imm ->
-          AssignInt { rd; imm = Int64.of_int (Uchar.to_int imm); size = Bit32; signed = false; }
+          AssignInt { rd; imm = Int64.of_int (Uchar.to_int imm); }
       | C_int { v; _ } ->
-          AssignInt { rd; imm = Int64.of_int32 v; size = Bit32; signed = true; }
+          AssignInt { rd; imm = Int64.of_int32 v; }
       | C_int64 { v; _ } ->
-          AssignInt { rd; imm = v; size = Bit64; signed = true; }
+          AssignInt { rd; imm = v; }
       | C_uint { v; _ } ->
-          AssignInt { rd; imm = Int64.of_int32 v; size = Bit32; signed = false; }
+          AssignInt { rd; imm = Int64.of_int32 v; }
       | C_uint64 { v; _ } ->
-          AssignInt { rd; imm = v; size = Bit64; signed = false; }
+          AssignInt { rd; imm = v; }
       | C_float { v; _ } ->
-          AssignFP { rd; imm = v; size = Bit32; }
+          AssignFP { rd; imm = v; }
       | C_double { v; _ } ->
-          AssignFP { rd; imm = v; size = Bit64; }
+          AssignFP { rd; imm = v; }
       | C_bytes { v; _ } ->
           AssignStr { rd; imm = v }
       | C_bigint _ -> failwith "TODO: riscv_ssa.ml: bigint not supported"
       ) in
       Basic_vec.push ssa instruction;
       rd
+
+let generate_vtables () =
+  let vtables = Basic_vec.empty () in
+ 
+  Hashtbl.iter (fun ty methods ->
+    let label = Printf.sprintf "vtable_%s" (Mtype.to_string ty) in
+    Basic_vec.push vtables (Vtable { label; values = Basic_vec.to_list methods })
+  ) trait_table;
+  
+  Basic_vec.to_list vtables
 
 (**
 Converts given `expr` into a list of SSA instructions,
@@ -988,6 +1115,16 @@ let convert_toplevel _start (top: Mcore.top_item) =
       let fn = Ident.to_string binder in
       let args = List.map var_of_param func.params in
       let body = convert_expr func.body in
+
+      (* Record the index of arguments that are traits *)
+      let traited = Basic_vec.empty () in
+      List.iteri (fun i x ->
+        if is_trait x.ty then Basic_vec.push traited (i, x.ty))
+      args;
+
+      if Basic_vec.length traited != 0 then
+        Hashtbl.add traited_args fn (Basic_vec.to_list traited);
+
       if export_info_ != None then
         prerr_endline "warning: export info is non-empty";
       [ FnDecl { fn; args; body } ]
@@ -1017,10 +1154,13 @@ let ssa_of_mcore (core: Mcore.t) =
   (* Body of the function `_start`, which is the entry point *)
   let _start = Basic_vec.empty () in
 
-  (* Look through types, and calculate their field offsets *)
+  (* Look through types and calculate their field offsets *)
   update_types core.types;
 
-  (* Deal with other functions *)
+  (* Look through traits and their implementations *)
+  record_traits core.object_methods;
+
+  (* Deal with ordinary functions *)
   let body = List.map (fun x -> convert_toplevel _start x) core.body |> List.flatten in
 
   (* Deal with main *)
@@ -1040,4 +1180,8 @@ let ssa_of_mcore (core: Mcore.t) =
 
   let start_body = Basic_vec.to_list _start in
   let with_start = FnDecl { fn = "_start"; args = []; body = start_body } :: with_main in
-  with_start
+
+  (* Add vtables *)
+  let vtbs = generate_vtables () in
+  let with_vtables = vtbs @ with_start in
+  with_vtables

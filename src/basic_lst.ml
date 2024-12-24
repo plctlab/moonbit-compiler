@@ -20,9 +20,7 @@ from OCaml standard library. Please avoid them, and replace them with the functi
 in standard `List` module when possible. Thank you.
 *)
 
-module Unsafe_external = Basic_unsafe_external
 module Arr = Basic_arr
-open Unsafe_external
 
 let map l f = List.map f l
 
@@ -57,11 +55,11 @@ let rec map_append l1 l2 f =
   | [] -> l2
   | a :: tl -> f a :: map_append tl l2 f
 
-let rec fold_right l acc f = List.fold_right f l acc
+let fold_right l acc f = List.fold_right f l acc
 
-let rec fold_right2 l r acc f = List.fold_right2 f l r acc
+let fold_right2 l r acc f = List.fold_right2 f l r acc
 
-let rec map2 l r f = List.map2 f l r
+let map2 l r f = List.map2 f l r
 
 let rec fold_left_with_offset l accu i f =
   match l with
@@ -316,52 +314,13 @@ let rec split_map2 l r f =
       (a1 :: a2 :: a3 :: a4 :: a5 :: ass, b1 :: b2 :: b3 :: b4 :: b5 :: bss)
   | _, _ -> invalid_arg __FUNCTION__
 
-let sort_via_array lst cmp =
-  let arr = Array.of_list lst in
-  Array.sort cmp arr;
-  Array.to_list arr
-
-let sort_via_arrayf lst cmp f =
-  let arr = Array.of_list lst in
-  Array.sort cmp arr;
-  Arr.to_list_f arr f
-
-let rec assoc_by_string lst (k : string) def =
-  match lst with
-  | [] -> ( match def with None -> assert false | Some x -> x)
-  | (k1, v1) :: rest -> if k1 = k then v1 else assoc_by_string rest k def
-
-let rec assoc_by_int lst (k : int) def =
-  match lst with
-  | [] -> ( match def with None -> assert false | Some x -> x)
-  | (k1, v1) :: rest -> if k1 = k then v1 else assoc_by_int rest k def
-
-let rec assoc_by lst comp k def =
-  match lst with
-  | [] -> ( match def with None -> assert false | Some x -> x)
-  | (k1, v1) :: rest -> if comp k1 k then v1 else assoc_by rest comp k def
-
+(** In a list of key-value pairs, find the value associated with key `k`. *)
 let rec assoc_by_opt lst comp k =
   match lst with
   | [] -> None
   | (k1, v1) :: rest -> if comp k1 k then Some v1 else assoc_by_opt rest comp k
 
 let assoc_str lst str = assoc_by_opt lst String.equal str
-let assoc_str_exn lst str = assoc_by_string lst str None
-
-let rec iter_snd lst f =
-  match lst with
-  | [] -> ()
-  | (_, x) :: xs ->
-      f x;
-      iter_snd xs f
-
-let rec iter_fst lst f =
-  match lst with
-  | [] -> ()
-  | (x, _) :: xs ->
-      f x;
-      iter_fst xs f
 
 let rec exists l p = match l with [] -> false | x :: xs -> p x || exists xs p
 
