@@ -1,0 +1,661 @@
+((body
+  ((Stub $builtin.unsafe_sub_string
+    (Internal (func_name $moonbit.unsafe_bytes_sub_string)) (bytes int int)
+    (string) ())
+   (Fn
+    ((binder Bytes::to_unchecked_string)
+     (func
+      ((params
+        (((binder self/0) (ty bytes)) ((binder offset/1) (ty int))
+         ((binder length/2) (ty int))))
+       (body
+        (Let len/3 (Pbyteslength (Var self/0 bytes))
+         (If
+          (Psequand ((Pcomparison I32 Ge) (Var offset/1 int) 0)
+           (Psequand ((Pcomparison I32 Ge) (Var length/2 int) 0)
+            ((Pcomparison I32 Le)
+             ((Parith I32 Add) (Var offset/1 int) (Var length/2 int))
+             (Var len/3 int))))
+          (Apply $builtin.unsafe_sub_string
+           ((Var self/0 bytes) (Var offset/1 int) (Var length/2 int))
+           (Normal (func (params (bytes int int)) (return string))) string)
+          ((Ppanic)) string)
+         string))))
+     (export_info_ ())))
+   (Fn
+    ((binder StringBuilder::to_string)
+     (func
+      ((params
+        (((binder self/0)
+          (ty (constr @moonbitlang/core/builtin.StringBuilder)))))
+       (body
+        (Apply Bytes::to_unchecked_string
+         ((Field
+           (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+           (Label ((label_name bytes))) 0 bytes)
+          0
+          (Field
+           (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+           (Label ((label_name len))) 1 int))
+         (Normal (func (params (bytes int int)) (return string))) string))))
+     (export_info_ ())))
+   (Fn
+    ((binder Bytes::new)
+     (func
+      ((params (((binder len/0) (ty int))))
+       (body (Pmakebytes (Var len/0 int) "\5Cx00"))))
+     (export_info_ ())))
+   (Fn
+    ((binder StringBuilder::new)
+     (func
+      ((params (((binder size_hint/0) (ty int))))
+       (body
+        (Let initial/1
+         (If ((Pcomparison I32 Lt) (Var size_hint/0 int) 1) 1
+          ((Var size_hint/0 int)) int)
+         (Let bytes/2
+          (Apply Bytes::new ((Var initial/1 int))
+           (Normal (func (params (int)) (return bytes))) bytes)
+          (Record
+           (((label ((label_name bytes))) (pos 0) (is_mut true)
+             (expr (Var bytes/2 bytes)))
+            ((label ((label_name len))) (pos 1) (is_mut true) (expr 0)))
+           (constr @moonbitlang/core/builtin.StringBuilder))
+          (constr @moonbitlang/core/builtin.StringBuilder))
+         (constr @moonbitlang/core/builtin.StringBuilder)))))
+     (export_info_ ())))
+   (Fn
+    ((binder StringBuilder::new.size_hint.default)
+     (func ((params ()) (body 0))) (export_info_ ())))
+   (Fn
+    ((binder $builtin.abort|Int|)
+     (func
+      ((params (((binder msg/0) (ty string))))
+       (body (Sequence (Pignore (Var msg/0 string)) (Ppanic) int))))
+     (export_info_ ())))
+   (Fn
+    ((binder UInt::to_byte)
+     (func
+      ((params (((binder self/0) (ty uint))))
+       (body
+        ((Pconvert (kind Convert) (from I32) (to_ U8))
+         ((Pconvert (kind Reinterpret) (from U32) (to_ I32))
+          (Var self/0 uint))))))
+     (export_info_ ())))
+   (Fn
+    ((binder Char::to_uint)
+     (func
+      ((params (((binder self/0) (ty char))))
+       (body
+        ((Pconvert (kind Reinterpret) (from I32) (to_ U32))
+         (Pidentity (Var self/0 char))))))
+     (export_info_ ())))
+   (Fn
+    ((binder Bytes::set_utf16_char)
+     (func
+      ((params
+        (((binder self/0) (ty bytes)) ((binder offset/1) (ty int))
+         ((binder value/2) (ty char))))
+       (body
+        (Let code/3
+         (Apply Char::to_uint ((Var value/2 char))
+          (Normal (func (params (char)) (return uint))) uint)
+         (If ((Pcomparison U32 Lt) (Var code/3 uint) 0x10000)
+          (Sequence
+           (Psetbytesitem (Var self/0 bytes) (Var offset/1 int)
+            (Apply UInt::to_byte
+             (((Pbitwise (operand_type U32) (operator And)) (Var code/3 uint)
+               0xFF))
+             (Normal (func (params (uint)) (return byte))) byte))
+           (Sequence
+            (Psetbytesitem (Var self/0 bytes)
+             ((Parith I32 Add) (Var offset/1 int) 1)
+             (Apply UInt::to_byte
+              (((Pbitwise (operand_type U32) (operator Shr))
+                (Var code/3 uint) 8))
+              (Normal (func (params (uint)) (return byte))) byte))
+            2 int)
+           int)
+          ((If ((Pcomparison U32 Lt) (Var code/3 uint) 0x110000)
+            (Let hi/4 ((Parith U32 Sub) (Var code/3 uint) 0x10000)
+             (Let lo/5
+              ((Pbitwise (operand_type U32) (operator Or))
+               ((Pbitwise (operand_type U32) (operator Shr)) (Var hi/4 uint)
+                10)
+               0xD800)
+              (Let hi/6
+               ((Pbitwise (operand_type U32) (operator Or))
+                ((Pbitwise (operand_type U32) (operator And)) (Var hi/4 uint)
+                 0x3FF)
+                0xDC00)
+               (Sequence
+                (Psetbytesitem (Var self/0 bytes) (Var offset/1 int)
+                 (Apply UInt::to_byte
+                  (((Pbitwise (operand_type U32) (operator And))
+                    (Var lo/5 uint) 0xFF))
+                  (Normal (func (params (uint)) (return byte))) byte))
+                (Sequence
+                 (Psetbytesitem (Var self/0 bytes)
+                  ((Parith I32 Add) (Var offset/1 int) 1)
+                  (Apply UInt::to_byte
+                   (((Pbitwise (operand_type U32) (operator Shr))
+                     (Var lo/5 uint) 8))
+                   (Normal (func (params (uint)) (return byte))) byte))
+                 (Sequence
+                  (Psetbytesitem (Var self/0 bytes)
+                   ((Parith I32 Add) (Var offset/1 int) 2)
+                   (Apply UInt::to_byte
+                    (((Pbitwise (operand_type U32) (operator And))
+                      (Var hi/6 uint) 0xFF))
+                    (Normal (func (params (uint)) (return byte))) byte))
+                  (Sequence
+                   (Psetbytesitem (Var self/0 bytes)
+                    ((Parith I32 Add) (Var offset/1 int) 3)
+                    (Apply UInt::to_byte
+                     (((Pbitwise (operand_type U32) (operator Shr))
+                       (Var hi/6 uint) 8))
+                     (Normal (func (params (uint)) (return byte))) byte))
+                   4 int)
+                  int)
+                 int)
+                int)
+               int)
+              int)
+             int)
+            ((Apply $builtin.abort|Int| ("Char out of range")
+              (Normal (func (params (string)) (return int))) int))
+            int))
+          int)
+         int))))
+     (export_info_ ())))
+   (Stub Bytes::unsafe_blit (Internal (func_name $moonbit.unsafe_bytes_blit))
+    (bytes int bytes int int) () ())
+   (Fn
+    ((binder Bytes::blit)
+     (func
+      ((params
+        (((binder self/0) (ty bytes)) ((binder dst_offset/1) (ty int))
+         ((binder src/2) (ty bytes)) ((binder src_offset/3) (ty int))
+         ((binder length/4) (ty int))))
+       (body
+        (Let dst_len/5 (Pbyteslength (Var self/0 bytes))
+         (Let src_len/6 (Pbyteslength (Var src/2 bytes))
+          (If
+           (Psequand ((Pcomparison I32 Ge) (Var length/4 int) 0)
+            (Psequand ((Pcomparison I32 Ge) (Var dst_offset/1 int) 0)
+             (Psequand ((Pcomparison I32 Ge) (Var src_offset/3 int) 0)
+              (Psequand
+               ((Pcomparison I32 Le)
+                ((Parith I32 Add) (Var dst_offset/1 int) (Var length/4 int))
+                (Var dst_len/5 int))
+               ((Pcomparison I32 Le)
+                ((Parith I32 Add) (Var src_offset/3 int) (Var length/4 int))
+                (Var src_len/6 int))))))
+           (Apply Bytes::unsafe_blit
+            ((Var self/0 bytes) (Var dst_offset/1 int) (Var src/2 bytes)
+             (Var src_offset/3 int) (Var length/4 int))
+            (Normal (func (params (bytes int bytes int int)) (return unit)))
+            unit)
+           ((Ppanic)) unit)
+          unit)
+         unit))))
+     (export_info_ ())))
+   (Fn
+    ((binder StringBuilder::grow_if_necessary)
+     (func
+      ((params
+        (((binder self/0)
+          (ty (constr @moonbitlang/core/builtin.StringBuilder)))
+         ((binder required/1) (ty int))))
+       (body
+        (Let enough_space!27
+         (Pbyteslength
+          (Field
+           (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+           (Label ((label_name bytes))) 0 bytes))
+         (Sequence
+          (If ((Pcomparison I32 Le) (Var enough_space!27 int) 0)
+           (Assign enough_space!27 1 unit) () unit)
+          (Sequence
+           (Loop ()
+            (If
+             ((Pcomparison I32 Lt) (Var enough_space!27 int)
+              (Var required/1 int))
+             (Sequence
+              (Assign enough_space!27
+               ((Parith I32 Mul) (Var enough_space!27 int) 2) unit)
+              (Continue () ((name *while) (stamp 30)) unit) unit)
+             () unit)
+            () ((name *while) (stamp 30)) unit)
+           (If
+            ((Pcomparison I32 Ne) (Var enough_space!27 int)
+             (Pbyteslength
+              (Field
+               (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+               (Label ((label_name bytes))) 0 bytes)))
+            (Mutate
+             (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+             ((label_name bytes))
+             (Let self/2
+              (Apply Bytes::new ((Var enough_space!27 int))
+               (Normal (func (params (int)) (return bytes))) bytes)
+              (Sequence
+               (Apply Bytes::blit
+                ((Var self/2 bytes) 0
+                 (Field
+                  (Var self/0
+                   (constr @moonbitlang/core/builtin.StringBuilder))
+                  (Label ((label_name bytes))) 0 bytes)
+                 0
+                 (Field
+                  (Var self/0
+                   (constr @moonbitlang/core/builtin.StringBuilder))
+                  (Label ((label_name len))) 1 int))
+                (Normal
+                 (func (params (bytes int bytes int int)) (return unit)))
+                unit)
+               (Var self/2 bytes) bytes)
+              bytes)
+             0 unit)
+            () unit)
+           unit)
+          unit)
+         unit))))
+     (export_info_ ())))
+   (Fn
+    ((binder StringBuilder::write_char)
+     (func
+      ((params
+        (((binder self/0)
+          (ty (constr @moonbitlang/core/builtin.StringBuilder)))
+         ((binder ch/1) (ty char))))
+       (body
+        (Sequence
+         (Apply StringBuilder::grow_if_necessary
+          ((Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+           ((Parith I32 Add)
+            (Field
+             (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+             (Label ((label_name len))) 1 int)
+            4))
+          (Normal
+           (func
+            (params ((constr @moonbitlang/core/builtin.StringBuilder) int))
+            (return unit)))
+          unit)
+         (Let inc/2
+          (Apply Bytes::set_utf16_char
+           ((Field
+             (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+             (Label ((label_name bytes))) 0 bytes)
+            (Field
+             (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+             (Label ((label_name len))) 1 int)
+            (Var ch/1 char))
+           (Normal (func (params (bytes int char)) (return int))) int)
+          (Mutate
+           (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+           ((label_name len))
+           ((Parith I32 Add)
+            (Field
+             (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+             (Label ((label_name len))) 1 int)
+            (Var inc/2 int))
+           1 unit)
+          unit)
+         unit))))
+     (export_info_ ())))
+   (Fn
+    ((binder Bytes::blit_from_string)
+     (func
+      ((params
+        (((binder self/0) (ty bytes)) ((binder bytes_offset/1) (ty int))
+         ((binder str/2) (ty string)) ((binder str_offset/3) (ty int))
+         ((binder length/4) (ty int))))
+       (body
+        (Let e1/5
+         ((Parith I32 Sub)
+          ((Parith I32 Add) (Var bytes_offset/1 int) (Var length/4 int)) 1)
+         (Let e2/6
+          ((Parith I32 Sub)
+           ((Parith I32 Add) (Var str_offset/3 int) (Var length/4 int)) 1)
+          (Let len1/7 (Pbyteslength (Var self/0 bytes))
+           (Let len2/8 (Pstringlength (Var str/2 string))
+            (If
+             (Psequand ((Pcomparison I32 Ge) (Var length/4 int) 0)
+              (Psequand ((Pcomparison I32 Ge) (Var bytes_offset/1 int) 0)
+               (Psequand
+                ((Pcomparison I32 Lt) (Var e1/5 int) (Var len1/7 int))
+                (Psequand ((Pcomparison I32 Ge) (Var str_offset/3 int) 0)
+                 ((Pcomparison I32 Lt) (Var e2/6 int) (Var len2/8 int))))))
+             (Let end_str_offset/9
+              ((Parith I32 Add) (Var str_offset/3 int) (Var length/4 int))
+              (Loop (((binder i/10) (ty int)) ((binder j/11) (ty int)))
+               (If
+                ((Pcomparison I32 Lt) (Var i/10 int)
+                 (Var end_str_offset/9 int))
+                (Sequence
+                 (Let c/12
+                  (Apply Char::to_uint
+                   ((Pgetstringitem (Var str/2 string) (Var i/10 int)))
+                   (Normal (func (params (char)) (return uint))) uint)
+                  (Sequence
+                   (Psetbytesitem (Var self/0 bytes) (Var j/11 int)
+                    (Apply UInt::to_byte
+                     (((Pbitwise (operand_type U32) (operator And))
+                       (Var c/12 uint) 0xff))
+                     (Normal (func (params (uint)) (return byte))) byte))
+                   (Psetbytesitem (Var self/0 bytes)
+                    ((Parith I32 Add) (Var j/11 int) 1)
+                    (Apply UInt::to_byte
+                     (((Pbitwise (operand_type U32) (operator Shr))
+                       (Var c/12 uint) 8))
+                     (Normal (func (params (uint)) (return byte))) byte))
+                   unit)
+                  unit)
+                 (Continue
+                  (((Parith I32 Add) (Var i/10 int) 1)
+                   ((Parith I32 Add) (Var j/11 int) 2))
+                  ((name *for) (stamp 48)) unit)
+                 unit)
+                () unit)
+               ((Var str_offset/3 int) (Var bytes_offset/1 int))
+               ((name *for) (stamp 48)) unit)
+              unit)
+             ((Ppanic)) unit)
+            unit)
+           unit)
+          unit)
+         unit))))
+     (export_info_ ())))
+   (Fn
+    ((binder StringBuilder::write_string)
+     (func
+      ((params
+        (((binder self/0)
+          (ty (constr @moonbitlang/core/builtin.StringBuilder)))
+         ((binder str/1) (ty string))))
+       (body
+        (Sequence
+         (Apply StringBuilder::grow_if_necessary
+          ((Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+           ((Parith I32 Add)
+            (Field
+             (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+             (Label ((label_name len))) 1 int)
+            ((Parith I32 Mul) (Pstringlength (Var str/1 string)) 2)))
+          (Normal
+           (func
+            (params ((constr @moonbitlang/core/builtin.StringBuilder) int))
+            (return unit)))
+          unit)
+         (Sequence
+          (Apply Bytes::blit_from_string
+           ((Field
+             (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+             (Label ((label_name bytes))) 0 bytes)
+            (Field
+             (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+             (Label ((label_name len))) 1 int)
+            (Var str/1 string) 0 (Pstringlength (Var str/1 string)))
+           (Normal (func (params (bytes int string int int)) (return unit)))
+           unit)
+          (Mutate
+           (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+           ((label_name len))
+           ((Parith I32 Add)
+            (Field
+             (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+             (Label ((label_name len))) 1 int)
+            ((Parith I32 Mul) (Pstringlength (Var str/1 string)) 2))
+           1 unit)
+          unit)
+         unit))))
+     (export_info_ ())))
+   (Fn
+    ((binder StringBuilder::write_substring)
+     (func
+      ((params
+        (((binder self/0)
+          (ty (constr @moonbitlang/core/builtin.StringBuilder)))
+         ((binder str/1) (ty string)) ((binder start/2) (ty int))
+         ((binder len/3) (ty int))))
+       (body
+        (If
+         (Psequand ((Pcomparison I32 Ge) (Var start/2 int) 0)
+          (Psequand ((Pcomparison I32 Ge) (Var len/3 int) 0)
+           ((Pcomparison I32 Le)
+            ((Parith I32 Add) (Var start/2 int) (Var len/3 int))
+            (Pstringlength (Var str/1 string)))))
+         (Sequence
+          (Apply StringBuilder::grow_if_necessary
+           ((Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+            ((Parith I32 Add)
+             (Field
+              (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+              (Label ((label_name len))) 1 int)
+             ((Parith I32 Mul) (Var len/3 int) 2)))
+           (Normal
+            (func
+             (params ((constr @moonbitlang/core/builtin.StringBuilder) int))
+             (return unit)))
+           unit)
+          (Sequence
+           (Apply Bytes::blit_from_string
+            ((Field
+              (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+              (Label ((label_name bytes))) 0 bytes)
+             (Field
+              (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+              (Label ((label_name len))) 1 int)
+             (Var str/1 string) (Var start/2 int) (Var len/3 int))
+            (Normal (func (params (bytes int string int int)) (return unit)))
+            unit)
+           (Mutate
+            (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+            ((label_name len))
+            ((Parith I32 Add)
+             (Field
+              (Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+              (Label ((label_name len))) 1 int)
+             ((Parith I32 Mul) (Var len/3 int) 2))
+            1 unit)
+           unit)
+          unit)
+         ((Ppanic)) unit))))
+     (export_info_ ())))
+   (Fn
+    ((binder $builtin.to_string.write_digits|0)
+     (func
+      ((params
+        (((binder buf/0)
+          (ty (constr @moonbitlang/core/builtin.StringBuilder)))
+         ((binder num/1) (ty int))))
+       (body
+        (Let num2/2 ((Parith I32 Div) (Var num/1 int) 10)
+         (Sequence
+          (If ((Pcomparison I32 Ne) (Var num2/2 int) 0)
+           (Apply $builtin.to_string.write_digits|0
+            ((Var buf/0 (constr @moonbitlang/core/builtin.StringBuilder))
+             (Var num2/2 int))
+            (Normal (func (params (int)) (return unit))) unit)
+           () unit)
+          (Apply StringBuilder::write_char
+           ((Var buf/0 (constr @moonbitlang/core/builtin.StringBuilder))
+            (Pidentity
+             ((Parith I32 Add)
+              (Let n/3 ((Parith I32 Mod) (Var num/1 int) 10)
+               (If ((Pcomparison I32 Lt) (Var n/3 int) 0)
+                ((Parith I32 Sub) 0 (Var n/3 int)) ((Var n/3 int)) int)
+               int)
+              48)))
+           (Normal
+            (func
+             (params ((constr @moonbitlang/core/builtin.StringBuilder) char))
+             (return unit)))
+           unit)
+          unit)
+         unit))))
+     (export_info_ ())))
+   (Fn
+    ((binder Int::to_string)
+     (func
+      ((params (((binder self/0) (ty int))))
+       (body
+        (Let buf/1
+         (Apply StringBuilder::new
+          ((Apply StringBuilder::new.size_hint.default ()
+            (Normal (func (params ()) (return int))) int))
+          (Normal
+           (func (params (int))
+            (return (constr @moonbitlang/core/builtin.StringBuilder))))
+          (constr @moonbitlang/core/builtin.StringBuilder))
+         (Sequence
+          (If ((Pcomparison I32 Lt) (Var self/0 int) 0)
+           (Apply StringBuilder::write_char
+            ((Var buf/1 (constr @moonbitlang/core/builtin.StringBuilder)) -)
+            (Normal
+             (func
+              (params
+               ((constr @moonbitlang/core/builtin.StringBuilder) char))
+              (return unit)))
+            unit)
+           () unit)
+          (Sequence
+           (Apply $builtin.to_string.write_digits|0
+            ((Var buf/1 (constr @moonbitlang/core/builtin.StringBuilder))
+             (Var self/0 int))
+            (Normal (func (params (int)) (return unit))) unit)
+           (Apply StringBuilder::to_string
+            ((Var buf/1 (constr @moonbitlang/core/builtin.StringBuilder)))
+            (Normal
+             (func
+              (params ((constr @moonbitlang/core/builtin.StringBuilder)))
+              (return string)))
+            string)
+           string)
+          string)
+         string))))
+     (export_info_ ())))
+   (Fn
+    ((binder Show::output|Int|)
+     (func
+      ((params
+        (((binder self/0) (ty int))
+         ((binder logger/1) (ty (trait @moonbitlang/core/builtin.Logger)))))
+       (body
+        ((Pcall_object_method (method_index 0) (method_name write_string))
+         (Var logger/1 (trait @moonbitlang/core/builtin.Logger))
+         (Apply Int::to_string ((Var self/0 int))
+          (Normal (func (params (int)) (return string))) string)))))
+     (export_info_ ())))
+   (Fn
+    ((binder $builtin.println|Int|)
+     (func
+      ((params (((binder input/0) (ty int))))
+       (body
+        (Pprintln
+         (Apply Show::to_string|Int||$default_impl| ((Var input/0 int))
+          (Normal (func (params (int)) (return string))) string)))))
+     (export_info_ ())))
+   (Fn
+    ((binder
+      Logger::write_sub_string|@moonbitlang/core/builtin.StringBuilder||$default_impl|)
+     (func
+      ((params
+        (((binder self/0)
+          (ty (constr @moonbitlang/core/builtin.StringBuilder)))
+         ((binder value/1) (ty string)) ((binder start/2) (ty int))
+         ((binder len/3) (ty int))))
+       (body
+        (Apply StringBuilder::write_substring
+         ((Var self/0 (constr @moonbitlang/core/builtin.StringBuilder))
+          (Var value/1 string) (Var start/2 int) (Var len/3 int))
+         (Normal
+          (func
+           (params
+            ((constr @moonbitlang/core/builtin.StringBuilder) string int int))
+           (return unit)))
+         unit))))
+     (export_info_ ())))
+   (Fn
+    ((binder Show::to_string|Int||$default_impl|)
+     (func
+      ((params (((binder self/0) (ty int))))
+       (body
+        (Let logger/1
+         (Apply StringBuilder::new
+          ((Apply StringBuilder::new.size_hint.default ()
+            (Normal (func (params ()) (return int))) int))
+          (Normal
+           (func (params (int))
+            (return (constr @moonbitlang/core/builtin.StringBuilder))))
+          (constr @moonbitlang/core/builtin.StringBuilder))
+         (Sequence
+          (Apply Show::output|Int|
+           ((Var self/0 int)
+            (Object
+             ((trait @moonbitlang/core/builtin.Logger)
+              (type_ @moonbitlang/core/builtin.StringBuilder))
+             (Var logger/1 (constr @moonbitlang/core/builtin.StringBuilder))
+             (trait @moonbitlang/core/builtin.Logger)))
+           (Normal
+            (func (params (int (trait @moonbitlang/core/builtin.Logger)))
+             (return unit)))
+           unit)
+          (Apply StringBuilder::to_string
+           ((Var logger/1 (constr @moonbitlang/core/builtin.StringBuilder)))
+           (Normal
+            (func (params ((constr @moonbitlang/core/builtin.StringBuilder)))
+             (return string)))
+           string)
+          string)
+         string))))
+     (export_info_ ())))))
+ (main
+  (Apply $builtin.println|Int| (3)
+   (Normal (func (params (int)) (return unit))) unit))
+ (types
+  ((@moonbitlang/core/builtin.StringBuilder
+    (Record
+     (fields
+      (((field_type bytes) (name (Named bytes)) (mut true))
+       ((field_type int) (name (Named len)) (mut true))))))
+   (@moonbitlang/core/builtin.Logger
+    (Trait
+     (methods
+      (((params_ty (string)) (return_ty unit) (index 0) (name write_string))
+       ((params_ty (string int int)) (return_ty unit) (index 1)
+        (name write_substring))
+       ((params_ty (string int int)) (return_ty unit) (index 2)
+        (name write_sub_string))
+       ((params_ty (char)) (return_ty unit) (index 3) (name write_char))))))))
+ (object_methods
+  ((((trait @moonbitlang/core/builtin.Logger)
+     (type_ @moonbitlang/core/builtin.StringBuilder))
+    ((self_ty (constr @moonbitlang/core/builtin.StringBuilder))
+     (methods
+      (((method_id StringBuilder::write_string) (method_prim ())
+        (method_ty
+         (func
+          (params ((constr @moonbitlang/core/builtin.StringBuilder) string))
+          (return unit))))
+       ((method_id StringBuilder::write_substring) (method_prim ())
+        (method_ty
+         (func
+          (params
+           ((constr @moonbitlang/core/builtin.StringBuilder) string int int))
+          (return unit))))
+       ((method_id
+         Logger::write_sub_string|@moonbitlang/core/builtin.StringBuilder||$default_impl|)
+        (method_prim ())
+        (method_ty
+         (func
+          (params
+           ((constr @moonbitlang/core/builtin.StringBuilder) string int int))
+          (return unit))))
+       ((method_id StringBuilder::write_char) (method_prim ())
+        (method_ty
+         (func
+          (params ((constr @moonbitlang/core/builtin.StringBuilder) char))
+          (return unit)))))))))))
