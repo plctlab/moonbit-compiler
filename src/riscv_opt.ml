@@ -216,5 +216,6 @@ let ssa_of_cfg fn =
 let opt ssa =
   visit_fn build_cfg ssa;
   let s = map_fn ssa_of_cfg ssa in
-  Basic_io.write "core.ssa" (String.concat "\n" (List.map Riscv_ssa.to_string s));
+  let out = Printf.sprintf "%s.ssa" !Driver_config.Linkcore_Opt.output_file in
+  Basic_io.write out (String.concat "\n" (List.map Riscv_ssa.to_string s));
   s

@@ -13,9 +13,6 @@ We store all discarded values (e.g. unit) into variable of this name.
 let discard = "_"
 let unit = { name = discard; ty = Mtype.T_unit }
 
-let to_string (r: var) = 
-  Printf.sprintf "%s: %s" r.name (Mtype.to_string r.ty)
-
 (** Similar to R-type instructions in RISC-V. *)
 type r_type = {
   rd: var;
@@ -85,13 +82,14 @@ type assign = {
 Similar to `ld` and `st` in RISC-V.
 
 `rd` and `rs` have different meanings in loads and stores:
-We load things from `rs` into `rd`,
-and store things from `rd` into `rs`.
+We load `byte` bytes from `rs` into `rd`,
+and store `byte` bytes from `rd` into `rs`.
 *)
 type mem_access = {
   rd: var;
   rs: var;
   offset: int;
+  byte: int;
 }
 
 type phi = {
@@ -137,6 +135,14 @@ and t =
 | Neq of r_type
 | Neg of r2_type
 
+(* Bitwise operations *)
+| And of r_type
+| Or of r_type
+| Shr of r_type
+| Shl of r_type
+| Xor of r_type
+| Not of r2_type
+
 (* Floating point operations *)
 | FAdd of r_type
 | FSub of r_type
@@ -154,7 +160,6 @@ and t =
 | Call of call_data
 | AssignInt of assign_int
 | AssignFP of assign_fp
-| AssignStr of assign_str
 | AssignLabel of assign_str
 | Assign of assign
 | Load of mem_access
@@ -165,7 +170,7 @@ and t =
 | Phi of phi
 | FnDecl of fn
 | GlobalVarDecl of var          (* See notes below *)
-| Vtable of extern_array        (* An array of labels in `.data` section *)
+| ExtArray of extern_array      (* An array in `.data` section *)
 | CallExtern of call_data       (* Call a C function *)
 | CallIndirect of call_indirect
 | Malloc of malloc
@@ -179,99 +184,124 @@ and t =
 (* We compile accesses to them in load/store in this stage, *)
 (* So no special treatment needed in RISC-V generation stage. *)
 
+
+(** Emits SSA form. We choose a less human-readable form to facilitate verifier. *)
 let to_string t =
   let rtype op ({ rd; rs1; rs2 }: r_type) =
-    Printf.sprintf "%s = %s %s %s" (to_string rd) rs1.name op rs2.name
+    Printf.sprintf "%s %s %s %s" op rd.name rs1.name rs2.name
+  in
+
+  let r2type op ({ rd; rs1; }: r2_type) =
+    Printf.sprintf "%s %s %s" op rd.name rs1.name
+  in
+
+  let die x =
+    failwith (Printf.sprintf "riscv_ssa.ml: invalid byte count (%d) in load/store" x)
   in
 
   (** Deal with indentation inside functions. *)
   let rec str t depth =
     String.make (depth * 2) ' ' ^
     match t with
-    | Add r -> rtype "+" r
-    | Sub r -> rtype "-" r
-    | Mul r -> rtype "*" r
-    | Div r -> rtype "/" r
+    | Add r -> rtype "add" r
+    | Sub r -> rtype "sub" r
+    | Mul r -> rtype "mul" r
+    | Div r -> rtype "div" r
     | Mod r -> rtype "mod" r
-    | Less r -> rtype "<" r
-    | Leq r -> rtype "<=" r
-    | Great r -> rtype ">" r
-    | Geq r -> rtype ">=" r
-    | Eq r -> rtype "==" r
-    | Neq r -> rtype "!=" r
-    | Neg { rd; rs1 } -> Printf.sprintf "%s = -%s" (to_string rd) rs1.name
+    | Less r -> rtype "le" r
+    | Leq r -> rtype "leq" r
+    | Great r -> rtype "ge" r
+    | Geq r -> rtype "geq" r
+    | Eq r -> rtype "eq" r
+    | Neq r -> rtype "ne" r
+    | Neg r -> r2type "neg" r
 
-    | FAdd r -> rtype "+." r
-    | FSub r -> rtype "-." r
-    | FMul r -> rtype "*." r
-    | FDiv r -> rtype "/." r
-    | FLess r -> rtype "<." r
-    | FLeq r -> rtype "<=." r
-    | FGreat r -> rtype ">." r
-    | FGeq r -> rtype ">=." r
-    | FEq r -> rtype "==." r
-    | FNeq r -> rtype "!=." r
-    | FNeg { rd; rs1 } -> Printf.sprintf "%s = -%s" (to_string rd) rs1.name
+    | And r -> rtype "and" r
+    | Or r -> rtype "or" r
+    | Shr r -> rtype "shr" r
+    | Shl r -> rtype "shl" r
+    | Xor r -> rtype "xor" r
+    | Not r -> r2type "not" r
+
+    | FAdd r -> rtype "fadd" r
+    | FSub r -> rtype "fsub" r
+    | FMul r -> rtype "fmul" r
+    | FDiv r -> rtype "fdiv" r
+    | FLess r -> rtype "fle" r
+    | FLeq r -> rtype "fleq" r
+    | FGreat r -> rtype "fge" r
+    | FGeq r -> rtype "fgeq" r
+    | FEq r -> rtype "feq" r
+    | FNeq r -> rtype "fneq" r
+    | FNeg r -> r2type "fneg" r
 
     | Call { rd; fn; args } ->
-        let args_list = String.concat ", " (List.map (fun x -> x.name) args) in
-        Printf.sprintf "%s = call %s (%s)" (to_string rd) fn args_list
+        let args_list = String.concat " " (List.map (fun x -> x.name) args) in
+        Printf.sprintf "call %s %s %s" rd.name fn args_list
 
     | CallExtern { rd; fn; args } ->
-        let args_list = String.concat ", " (List.map (fun x -> x.name) args) in
-        Printf.sprintf "%s = call_libc %s (%s)" (to_string rd) fn args_list
+        let args_list = String.concat " " (List.map (fun x -> x.name) args) in
+        Printf.sprintf "call_libc %s %s %s" rd.name fn args_list
 
     | CallIndirect { rd; rs; args } ->
-        let args_list = String.concat ", " (List.map (fun x -> x.name) args) in
-        Printf.sprintf "%s = call_indirect %s (%s)" (to_string rd) rs.name args_list
+        let args_list = String.concat " " (List.map (fun x -> x.name) args) in
+        Printf.sprintf "call_indirect %s %s %s" rd.name rs.name args_list
 
     | AssignInt { rd; imm; } ->
-        Printf.sprintf "%s = %s" (to_string rd) (Int64.to_string imm)
+        Printf.sprintf "li %s %s" rd.name (Int64.to_string imm)
 
     | AssignFP { rd; imm; } ->
-        Printf.sprintf "%s = %f" (to_string rd) imm
-    
-    | AssignStr { rd; imm; } ->
-        Printf.sprintf "%s = \"%s\"" (to_string rd) imm
+        Printf.sprintf "fli %s = %f" rd.name imm
     
     | AssignLabel { rd; imm; } ->
-        Printf.sprintf "%s = label %s" (to_string rd) imm
+        Printf.sprintf "la %s %s" rd.name imm
 
     | Assign { rd; rs; } ->
-        Printf.sprintf "%s = %s" (to_string rd) rs.name
+        Printf.sprintf "mv %s %s" rd.name rs.name
 
-    | Load { rd; rs; offset } ->
-        Printf.sprintf "%s = %s[offset = %d]" (to_string rd) rs.name offset
+    (* byte can only be one of: 1, 4 and 8. *)
+    | Load { rd; rs; offset; byte } ->
+        let op = (match byte with
+        | 1 -> "lb"
+        | 4 -> "lw"
+        | 8 -> "ld"
+        | x -> die x) in
+        Printf.sprintf "%s %s %s %d" op rd.name rs.name offset
 
-    | Store { rd; rs; offset } ->
-        Printf.sprintf "%s[offset = %d] = %s" rs.name offset rd.name
+    | Store { rd; rs; offset; byte } ->
+        let op = (match byte with
+        | 1 -> "sb"
+        | 4 -> "sw"
+        | 8 -> "sd"
+        | x -> die x) in
+        Printf.sprintf "%s %s %s %d" op rd.name rs.name offset
 
     | Jump target ->
-        Printf.sprintf "jump %s" target
+        Printf.sprintf "j %s" target
 
     | Branch { cond; ifso; ifnot } ->
-        Printf.sprintf "br %s true:%s false:%s" cond.name ifso ifnot
+        Printf.sprintf "br %s %s %s" cond.name ifso ifnot
 
     | Label label ->
         Printf.sprintf "\n%s%s:" (String.make (depth * 2 - 2) ' ') label
     
     | Phi { rd; rs } ->
-        let rs_str = List.map (fun (r, label) -> Printf.sprintf "%s[%s]" r.name label) rs in
-        Printf.sprintf "%s = φ %s" (to_string rd) (String.concat " " rs_str)
+        let rs_str = List.map (fun (r, label) -> Printf.sprintf "%s %s" r.name label) rs in
+        Printf.sprintf "phi %s %s" rd.name (String.concat " " rs_str)
 
     | Malloc { rd; size } ->
-        Printf.sprintf "%s = malloc %d" rd.name size
+        Printf.sprintf "malloc %s %d" rd.name size
     
     | FnDecl { fn; args; body; } ->
-        let args_str = String.concat ", " (List.map to_string args) in
+        let args_str = String.concat ", " (List.map (fun x -> x.name) args) in
         let body_str = String.concat "\n" (List.map (fun t -> str t (depth + 1)) body) in
         
         Printf.sprintf "fn %s (%s) {\n%s\n}\n" fn args_str body_str
 
     | GlobalVarDecl var ->
-        Printf.sprintf "global %s\n" (to_string var);
+        Printf.sprintf "global %s: %s\n" var.name (Mtype.to_string var.ty)
 
-    | Vtable { label; values } ->
+    | ExtArray { label; values } ->
         Printf.sprintf "global array %s:\n  %s\n" label (String.concat ", " values)
 
     | Return var ->
@@ -309,6 +339,9 @@ module Varset = Set.Make(String)
 
 let global_vars = ref Varset.empty
 
+(** Global instructions, i.e. GlobalVarDecl and ExtArray *)
+let global_inst = Basic_vec.empty ()
+
 (** Offset of each field in a record type. *)
 let offset_table = Hashtbl.create 64
 
@@ -333,6 +366,7 @@ let is_trait ty = match ty with
 
 let pointer_size = 8
 
+(* This is the size of their representations, not the actual size. *)
 let rec sizeof ty = match ty with
 | Mtype.T_bool -> 1
 | Mtype.T_byte -> 1
@@ -366,6 +400,12 @@ let rec reg_map fd fs t = match t with
 | Eq { rd; rs1; rs2; } -> Eq { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
 | Neq { rd; rs1; rs2; } -> Neq { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
 | Neg { rd; rs1 } -> Neg { rd = fd rd; rs1 = fs rs1 }
+| And { rd; rs1; rs2; } -> And { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Or { rd; rs1; rs2; } -> Or { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Shr { rd; rs1; rs2; } -> Shr { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Shl { rd; rs1; rs2; } -> Shl { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Xor { rd; rs1; rs2; } -> Xor { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Not { rd; rs1 } -> Not { rd = fd rd; rs1 = fs rs1 }
 | FAdd { rd; rs1; rs2; } -> FAdd { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
 | FSub { rd; rs1; rs2; } -> FSub { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
 | FMul { rd; rs1; rs2; } -> FMul { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
@@ -382,18 +422,17 @@ let rec reg_map fd fs t = match t with
 | CallIndirect { rd; rs; args } -> CallIndirect { rd = fd rd; rs = fs rs; args = List.map fs args }
 | AssignInt { rd; imm; } -> AssignInt { rd = fd rd; imm; }
 | AssignFP { rd; imm; } -> AssignFP { rd = fd rd; imm; }
-| AssignStr { rd; imm } -> AssignStr { rd = fd rd; imm; }
 | AssignLabel { rd; imm } -> AssignLabel { rd = fd rd; imm; }
 | Assign { rd; rs } -> Assign { rd = fd rd; rs = fs rs }
-| Load { rd; rs; offset } -> Load { rd = fd rd; rs = fs rs; offset }
-| Store { rd; rs; offset } -> Load { rd = fs rd; rs = fs rs; offset }
+| Load { rd; rs; offset; byte } -> Load { rd = fd rd; rs = fs rs; offset; byte }
+| Store { rd; rs; offset; byte } -> Load { rd = fs rd; rs = fs rs; offset; byte }
 | Jump label -> Jump label
 | Branch { cond; ifso; ifnot } -> Branch { cond = fs cond; ifso; ifnot }
 | Label label -> Label label
 | Phi { rd; rs } -> Phi { rd = fd rd; rs = List.map (fun (x, name) -> (fs x, name)) rs }
 | FnDecl { fn; args; body } -> FnDecl { fn; args; body = List.map (fun x -> reg_map fd fs x) body } 
 | GlobalVarDecl var -> GlobalVarDecl var
-| Vtable arr -> Vtable arr
+| ExtArray arr -> ExtArray arr
 | Malloc { rd; size } -> Malloc { rd = fd rd; size }
 | Return var -> Return (fs var)
 | Nop -> Nop
@@ -454,6 +493,39 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       | _ -> die ()) in
       Basic_vec.push ssa op
 
+  | Pbitwise { operand_type; operator } ->
+      let op = (match operator, args with
+      | Not, [rs1] -> (Not { rd; rs1 })
+      | And, [rs1; rs2] -> (And { rd; rs1; rs2 })
+      | Or, [rs1; rs2] -> (Or { rd; rs1; rs2 })
+      | Xor, [rs1; rs2] -> (And { rd; rs1; rs2 })
+      | Shr, [rs1; rs2] -> (Shr { rd; rs1; rs2 })
+      | Shl, [rs1; rs2] -> (Shl { rd; rs1; rs2 })
+
+      (* For ease of implementation, let's just rely on GCC builtins *)
+      | Popcnt, _ -> (CallExtern { rd; fn = "__builtin_popcount"; args })
+      | Ctz, _ -> (CallExtern { rd; fn = "__builtin_ctz"; args })
+      | Clz, _ -> (CallExtern { rd; fn = "__builtin_clz"; args })
+      | _ -> die()) in
+      Basic_vec.push ssa op
+
+  | Pconvert { kind; from; to_ } ->
+      (* Reinterpret means the register value should remain the same *)
+      if kind == Primitive.Reinterpret then
+        Basic_vec.push ssa (Assign { rd; rs = List.hd args })
+
+      (* But convert is where we must take some action *)
+      else
+        let arg = List.hd args in 
+        (match from, to_ with
+        | I32, U8 | U32, U8 ->
+            (* Discard higher bits by masking them away *)
+            let mask = new_temp Mtype.T_int in
+            Basic_vec.push ssa (AssignInt { rd = mask; imm = 255L });
+            Basic_vec.push ssa (And { rd; rs1 = arg; rs2 = mask })
+        
+        | _ -> die())
+
   | Parray_make ->
       (* This should construct a struct like: *)
       (* struct { void* buf; int len; } *)
@@ -464,8 +536,8 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       Basic_vec.push ssa (Malloc { rd; size = 12 });
       Basic_vec.push ssa (Malloc { rd = buf; size = buf_size });
       Basic_vec.push ssa (AssignInt { rd = len; imm = Int64.of_int length; });
-      Basic_vec.push ssa (Store { rd = buf; rs = rd; offset = 0 });
-      Basic_vec.push ssa (Store { rd = len; rs = rd; offset = 8 });
+      Basic_vec.push ssa (Store { rd = buf; rs = rd; offset = 0; byte = pointer_size });
+      Basic_vec.push ssa (Store { rd = len; rs = rd; offset = pointer_size; byte = 4 });
 
   (* The argument is whether we perform bound checks. *)
   (* My observation is that this argument is always Unsafe; *)
@@ -491,7 +563,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
         Basic_vec.push ssa (AssignInt { rd = sz; imm = Int64.of_int size; });
         Basic_vec.push ssa (Mul { rd = offset; rs1 = sz; rs2 = index });
         Basic_vec.push ssa (Add { rd = addr; rs1 = arr; rs2 = offset });
-        Basic_vec.push ssa (Load { rd; rs = addr; offset = 0 });
+        Basic_vec.push ssa (Load { rd; rs = addr; offset = 0; byte = size });
 
   | Pfixedarray_make { kind } ->
       (match kind with
@@ -527,22 +599,64 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       let fn_addr = new_temp Mtype.T_bytes in
       let load = new_temp Mtype.T_int in
 
-      Basic_vec.push ssa (Load { rd = vtb; rs = arg; offset = -pointer_size });
+      Basic_vec.push ssa (Load { rd = vtb; rs = arg; offset = -pointer_size; byte = pointer_size });
       Basic_vec.push ssa (AssignInt { rd = load; imm = Int64.of_int vtb_offset });
       Basic_vec.push ssa (Add { rd = fn_addr; rs1 = vtb; rs2 = load });
       (* The whole set of args (including self) is needed. *)
       Basic_vec.push ssa (CallIndirect { rd; rs = fn_addr; args })
 
+  (* It's the same to get/set items from either a string or a `bytes` *)
+  (* Be cautious that each element is 1 byte long. *)
+  | Pgetstringitem
+  | Pgetbytesitem ->
+      let str = List.nth args 0 in
+      let i = List.nth args 1 in
+      
+      let altered = new_temp Mtype.T_string in
+      Basic_vec.push ssa (Add { rd = altered; rs1 = str; rs2 = i });
+      Basic_vec.push ssa (Load { rd; rs = altered; offset = 0; byte = 1 })
+
+  | Psetbytesitem ->
+      let str = List.nth args 0 in
+      let i = List.nth args 1 in
+      
+      let altered = new_temp Mtype.T_string in
+      Basic_vec.push ssa (Add { rd = altered; rs1 = str; rs2 = i });
+      Basic_vec.push ssa (Store { rd; rs = altered; offset = 0; byte = 1 })
+
+  (* But for lengths, bytes and strings are different *)
+  | Pstringlength ->
+      Basic_vec.push ssa (CallExtern { rd; fn = "strlen"; args })
+
+  | Pbyteslength ->
+      let bytes = List.hd args in
+      Basic_vec.push ssa (Load { rd; rs = bytes; offset = -4; byte = 4 })
+
+  (* We must put length information in bytes when we make it, *)
+  (* but for strings we rely on `strlen` *)
+  | Pmakebytes ->
+      let len = List.nth args 0 in
+      let init = List.nth args 1 in
+
+      (* Let the pointer point to beginning of data, rather than the length section *)
+      let memory = new_temp Mtype.T_bytes in
+      let unused = new_temp Mtype.T_unit in
+      let int_sz = new_temp Mtype.T_int in
+      Basic_vec.push ssa (CallExtern { rd = memory; fn = "malloc"; args = [len] });
+      Basic_vec.push ssa (CallExtern { rd = unused; fn = "memset"; args = [memory; init; len] });
+      Basic_vec.push ssa (AssignInt { rd = int_sz; imm = 4L });
+      Basic_vec.push ssa (Add { rd; rs1 = memory; rs2 = int_sz })
+
   | Pignore -> ()
+
+  | Ppanic ->
+      Basic_vec.push ssa (CallExtern { rd; fn = "abort"; args })
 
   | Pidentity ->
       Basic_vec.push ssa (Assign { rd; rs = List.hd args })
   
   | Pprintln ->
       Basic_vec.push ssa (CallExtern { rd; fn = "puts"; args })
-
-  | Pstringlength ->
-      Basic_vec.push ssa (CallExtern { rd; fn = "strlen"; args })
   
   | _ -> Basic_vec.push ssa (Call { rd; fn = (Primitive.sexp_of_prim prim |> S.to_string); args })
 
@@ -628,7 +742,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
       if not is_pointer then variable
       else
         let rd = new_temp ty in
-        Basic_vec.push ssa (Load { rd; rs = variable; offset = 0 });
+        Basic_vec.push ssa (Load { rd; rs = variable; offset = 0; byte = sizeof ty });
         rd
   
       
@@ -646,10 +760,10 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let altered = new_temp Mtype.T_bytes in
 
       (* Alter the vtable offset according to the trait *)
-      Basic_vec.push ssa (Load { rd = vtb; rs = obj; offset = 0 });
+      Basic_vec.push ssa (Load { rd = vtb; rs = obj; offset = 0; byte = pointer_size });
       Basic_vec.push ssa (AssignInt { rd = load; imm = Int64.of_int delta });
       Basic_vec.push ssa (Add { rd = altered; rs1 = vtb; rs2 = load });
-      Basic_vec.push ssa (Store { rd = altered; rs = obj; offset = 0 });
+      Basic_vec.push ssa (Store { rd = altered; rs = obj; offset = 0; byte = pointer_size });
       obj
   
   (* Primitives are intrinsic functions. *)
@@ -714,10 +828,10 @@ let rec do_convert ssa (expr: Mcore.expr) =
       | Pmutable_ident _ ->
           (* We use `bytes` to represent arbitrary pointers. *)
           let space = new_temp Mtype.T_bytes in
-          let rd = { name = Ident.to_string name; ty = Mtype.T_bytes } in
-          Basic_vec.push ssa (Malloc { rd = space; size = sizeof rd.ty });
+          let rd = { name = Ident.to_string name; ty = rs.ty } in
+          Basic_vec.push ssa (Malloc { rd = space; size = sizeof rs.ty });
           Basic_vec.push ssa (Assign { rd; rs = space });
-          Basic_vec.push ssa (Store { rd; rs; offset = 0 });
+          Basic_vec.push ssa (Store { rd = rs; rs = rd; offset = 0; byte = sizeof rs.ty });
       
       | _ ->
           let rd = { name = Ident.to_string name; ty = rs.ty } in
@@ -746,15 +860,16 @@ let rec do_convert ssa (expr: Mcore.expr) =
             let vtb = new_temp Mtype.T_bytes in
             let altered = new_temp Mtype.T_bytes in
             let offset = -pointer_size in
+            let byte = pointer_size in 
 
             (* Before calling, we must advance the pointer to the correct offset *)
-            Basic_vec.push before (Load { rd = vtb; rs = arg; offset });
+            Basic_vec.push before (Load { rd = vtb; rs = arg; offset; byte });
             Basic_vec.push before (AssignInt { rd = load; imm = Int64.of_int delta });
             Basic_vec.push before (Add { rd = altered; rs1 = vtb; rs2 = load });
-            Basic_vec.push before (Store { rd = altered; rs = arg; offset });
+            Basic_vec.push before (Store { rd = altered; rs = arg; offset; byte });
 
             (* After the function returns, we must put it back *)
-            Basic_vec.push after (Store { rd = vtb; rs = arg; offset })
+            Basic_vec.push after (Store { rd = vtb; rs = arg; offset; byte })
           )
         ) indices
       );
@@ -774,18 +889,19 @@ let rec do_convert ssa (expr: Mcore.expr) =
   | Cexpr_field { record; accessor; pos; ty; _ } ->
       let rd = new_temp ty in
       let rs = do_convert ssa record in
+      let byte = sizeof rs.ty in
       
       (match rs.ty with
         | T_constr _ ->
             let offset = offsetof rs.ty pos in
-            Basic_vec.push ssa (Load { rd; rs; offset; });
+            Basic_vec.push ssa (Load { rd; rs; offset; byte });
             rd
           
         | T_tuple { tys } ->
             let precede = Basic_lst.take pos tys in
             let sizes = List.map sizeof precede in
             let offset = List.fold_left (fun acc x -> acc + x) 0 sizes in
-            Basic_vec.push ssa (Load { rd; rs; offset; });
+            Basic_vec.push ssa (Load { rd; rs; offset; byte });
             rd
         
         | _ -> failwith "riscv_ssa.ml: bad record type");
@@ -796,9 +912,11 @@ let rec do_convert ssa (expr: Mcore.expr) =
     let rd = do_convert ssa field in
     
     let offset = offsetof rs.ty pos in
-    Basic_vec.push ssa (Store { rd; rs; offset; });
+    Basic_vec.push ssa (Store { rd; rs; offset; byte = sizeof rd.ty });
     unit
 
+  (* TODO: Nested if's can cause wrong phi calls. *)
+  (* Should move it to riscv_opt.ml, where all basic blocks are emitted. *)
   | Cexpr_if { cond; ifso; ifnot; ty; _ } ->
       let rd = new_temp ty in
 
@@ -811,8 +929,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let ifnot_result =
         (match ifnot with
         | None -> unit
-        | Some x -> do_convert ifnot_ssa x
-        )
+        | Some x -> do_convert ifnot_ssa x)
       in
 
       let ifso_label = new_label "ifso_" in
@@ -950,7 +1067,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
   | Cexpr_assign { var; expr; ty } ->
       let rd = do_convert ssa expr in
       let rs = { name = Ident.to_string var; ty = Mtype.T_bytes } in
-      Basic_vec.push ssa (Store { rd; rs; offset = 0 });
+      Basic_vec.push ssa (Store { rd; rs; offset = 0; byte = sizeof rd.ty });
       unit
 
   (* Builds a record type. *)
@@ -970,12 +1087,12 @@ let rec do_convert ssa (expr: Mcore.expr) =
         (* in order to unite traited and untraited types *)
         Basic_vec.push ssa (Malloc { rd = beginning; size = size + pointer_size });
         Basic_vec.push ssa (AssignInt { rd = load; imm = Int64.of_int pointer_size });
-        Basic_vec.push ssa (Sub { rd; rs1 = beginning; rs2 = load });
+        Basic_vec.push ssa (Add { rd; rs1 = beginning; rs2 = load });
 
         (* Load in vtable *)
         let vtb = new_temp Mtype.T_bytes in
         Basic_vec.push ssa (AssignLabel { rd = vtb; imm = "vtable_" ^ (Mtype.to_string ty) });
-        Basic_vec.push ssa (Store { rd = vtb; rs = rd; offset = -pointer_size })
+        Basic_vec.push ssa (Store { rd = vtb; rs = rd; offset = -pointer_size; byte = pointer_size })
       else
         (* No vtable; everything normal *)
         Basic_vec.push ssa (Malloc { rd; size });
@@ -985,7 +1102,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let visit ({ pos; expr; _ }: Mcore.field_def) =
         let result = do_convert ssa expr in
         let offset = offsetof ty pos in 
-        Basic_vec.push ssa (Store { rd = result; rs = rd; offset })
+        Basic_vec.push ssa (Store { rd = result; rs = rd; offset; byte = sizeof ty })
       in
 
       List.iter visit fields;
@@ -1012,7 +1129,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let sizes = List.map (fun x -> sizeof x.ty) args |> Basic_lst.take (List.length args - 1) in
       let offsets = 0 :: Basic_lst.cumsum sizes in
       List.iter2 (fun arg offset ->
-        Basic_vec.push ssa (Store { rd = arg; rs = rd; offset })
+        Basic_vec.push ssa (Store { rd = arg; rs = rd; offset; byte = sizeof ty })
       ) args offsets;
       rd
 
@@ -1059,8 +1176,38 @@ let rec do_convert ssa (expr: Mcore.expr) =
   | Cexpr_const { c; ty; _ } ->
       let rd = new_temp ty in
       let instruction = (match c with
-      | C_string imm ->
-          AssignStr { rd; imm; }
+      | C_string v ->
+          let label = Printf.sprintf "str_%d" !slot in
+          let vals = String.to_seq v |> List.of_seq |> List.map (fun x -> Char.code x |> Int.to_string) in
+
+          (* To make it null-terminated, add '\0' to the end *)
+          let values = List.rev ("0" :: List.rev vals) in
+
+          slot := !slot + 1;
+          Basic_vec.push global_inst (ExtArray { label; values });
+          AssignLabel { rd; imm = label; }
+      
+      (* Strings and bytes are different. *)
+      (* As annotated in `deal_with_prim`, strings don't allow \0, but bytes do; *)
+      (* so we need to record byte length if we want that value later. *)
+      | C_bytes { v; _ } ->
+          let label = Printf.sprintf "bytes_%d" !slot in
+          let vals = String.to_seq v |> List.of_seq |> List.map (fun x -> Char.code x |> Int.to_string) in
+          let len = String.length v |> Int.to_string in
+          let values = len :: vals in
+
+          slot := !slot + 1;
+          Basic_vec.push global_inst (ExtArray { label; values });
+
+          (* Let the pointer point to beginning of data, rather than the length section *)
+          let beginning = new_temp Mtype.T_bytes in
+          let four = new_temp Mtype.T_int in
+          Basic_vec.push ssa (ExtArray { label; values });
+          Basic_vec.push ssa (AssignLabel { rd = beginning; imm = label; });
+          Basic_vec.push ssa (AssignInt { rd = four; imm = 4L });
+          Add { rd; rs1 = beginning; rs2 = four }
+
+
       | C_bool imm ->
           AssignInt { rd; imm = Int64.of_int (if imm then 1 else 0); }
       | C_char imm ->
@@ -1077,22 +1224,16 @@ let rec do_convert ssa (expr: Mcore.expr) =
           AssignFP { rd; imm = v; }
       | C_double { v; _ } ->
           AssignFP { rd; imm = v; }
-      | C_bytes { v; _ } ->
-          AssignStr { rd; imm = v }
       | C_bigint _ -> failwith "TODO: riscv_ssa.ml: bigint not supported"
       ) in
       Basic_vec.push ssa instruction;
       rd
 
 let generate_vtables () =
-  let vtables = Basic_vec.empty () in
- 
   Hashtbl.iter (fun ty methods ->
     let label = Printf.sprintf "vtable_%s" (Mtype.to_string ty) in
-    Basic_vec.push vtables (Vtable { label; values = Basic_vec.to_list methods })
-  ) trait_table;
-  
-  Basic_vec.to_list vtables
+    Basic_vec.push global_inst (ExtArray { label; values = Basic_vec.to_list methods })
+  ) trait_table
 
 (**
 Converts given `expr` into a list of SSA instructions,
@@ -1136,7 +1277,7 @@ let convert_toplevel _start (top: Mcore.top_item) =
       let rd = do_convert _start expr in
       let var = { name = Ident.to_string binder; ty = rd.ty } in
 
-      Basic_vec.push _start (Store { rd; rs = var; offset = 0 });
+      Basic_vec.push global_inst (Store { rd; rs = var; offset = 0; byte = sizeof rd.ty });
       [ GlobalVarDecl var ]
 
   (*
@@ -1181,7 +1322,7 @@ let ssa_of_mcore (core: Mcore.t) =
   let start_body = Basic_vec.to_list _start in
   let with_start = FnDecl { fn = "_start"; args = []; body = start_body } :: with_main in
 
-  (* Add vtables *)
-  let vtbs = generate_vtables () in
-  let with_vtables = vtbs @ with_start in
+  (* Add global declarations and variables *)
+  generate_vtables ();
+  let with_vtables = (Basic_vec.to_list global_inst) @ with_start in
   with_vtables
