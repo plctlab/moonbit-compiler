@@ -1,4 +1,5 @@
 open Riscv_ssa
+open Mtype
 
 (**
 Some MoonBit IR instructions carry optional compiler primitives in strange places.
@@ -34,7 +35,7 @@ let traited_args = Hashtbl.create 64
 let offsetof ty pos = Hashtbl.find offset_table (ty, pos)
 
 let is_trait ty = match ty with
-| Mtype.T_trait _ -> true
+| T_trait _ -> true
 | _ -> false
 
 let pointer_size = 8
@@ -50,22 +51,22 @@ let remove_space = String.map (fun c -> if c = ' ' then '_' else c)
 
 (* This is the size of their representations, not the actual size. *)
 let rec sizeof ty = match ty with
-| Mtype.T_bool -> 1
-| Mtype.T_byte -> 1
-| Mtype.T_bytes -> pointer_size
-| Mtype.T_char -> 1
-| Mtype.T_double -> 8
-| Mtype.T_float -> 4
-| Mtype.T_func _ -> pointer_size
-| Mtype.T_int -> 4
-| Mtype.T_int64 -> 8
-| Mtype.T_string -> pointer_size
-| Mtype.T_uint -> 4
-| Mtype.T_uint64 -> 8
-| Mtype.T_unit -> 0
-| Mtype.T_tuple _ -> pointer_size
-| Mtype.T_constr id -> pointer_size
-| Mtype.T_fixedarray _ -> pointer_size
+| T_bool -> 1
+| T_byte -> 1
+| T_bytes -> pointer_size
+| T_char -> 2
+| T_double -> 8
+| T_float -> 4
+| T_func _ -> pointer_size
+| T_int -> 4
+| T_int64 -> 8
+| T_string -> pointer_size
+| T_uint -> 4
+| T_uint64 -> 8
+| T_unit -> 0
+| T_tuple _ -> pointer_size
+| T_constr id -> pointer_size
+| T_fixedarray _ -> pointer_size
 | _ -> failwith "riscv_ssa.ml: cannot calculate size"
 
 (** Push the correct sequence of instruction based on primitives. *)
@@ -137,7 +138,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
         (match from, to_ with
         | I32, U8 | U32, U8 ->
             (* Discard higher bits by masking them away *)
-            let mask = new_temp Mtype.T_int in
+            let mask = new_temp T_int in
             Basic_vec.push ssa (AssignInt { rd = mask; imm = 255L });
             Basic_vec.push ssa (And { rd; rs1 = arg; rs2 = mask })
         
@@ -146,8 +147,8 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
   | Parray_make ->
       (* This should construct a struct like: *)
       (* struct { void* buf; int len; } *)
-      let buf = new_temp Mtype.T_bytes in
-      let len = new_temp Mtype.T_int in
+      let buf = new_temp T_bytes in
+      let len = new_temp T_int in
       let length = List.length args in
       let buf_size = if length = 0 then 0 else length * (sizeof (List.hd args).ty) in
       Basic_vec.push ssa (Malloc { rd; size = 12 });
@@ -172,9 +173,9 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
           | _ -> failwith "riscv_ssa.ml: bad type in fixedarray_get_item")
         in
         let size = sizeof ty in
-        let addr = new_temp Mtype.T_bytes in
-        let sz = new_temp Mtype.T_int in
-        let offset = new_temp Mtype.T_int in
+        let addr = new_temp T_bytes in
+        let sz = new_temp T_int in
+        let offset = new_temp T_int in
 
         (* Same as `rd = *(arr + sizeof(T) * index)` *)
         Basic_vec.push ssa (AssignInt { rd = sz; imm = Int64.of_int size; });
@@ -195,8 +196,8 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
               | _ -> failwith "riscv_ssa.ml: bad type in fixedarray_make")
             in
             let size = sizeof ty in
-            let sz = new_temp Mtype.T_int in
-            let length = new_temp Mtype.T_int in
+            let sz = new_temp T_int in
+            let length = new_temp T_int in
             (* Same as `rd = malloc(sizeof(T) * len)` *)
             Basic_vec.push ssa (AssignInt { rd = sz; imm = Int64.of_int size; });
             Basic_vec.push ssa (Mul { rd = length; rs1 = sz; rs2 = len });
@@ -212,9 +213,9 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       let arg = List.hd args in
 
       (* Temporaries in SSA *)
-      let vtb = new_temp Mtype.T_bytes in
-      let fn_addr = new_temp Mtype.T_bytes in
-      let load = new_temp Mtype.T_int in
+      let vtb = new_temp T_bytes in
+      let fn_addr = new_temp T_bytes in
+      let load = new_temp T_int in
 
       Basic_vec.push ssa (Load { rd = vtb; rs = arg; offset = -pointer_size; byte = pointer_size });
       Basic_vec.push ssa (AssignInt { rd = load; imm = Int64.of_int vtb_offset });
@@ -222,25 +223,37 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       (* The whole set of args (including self) is needed. *)
       Basic_vec.push ssa (CallIndirect { rd; rs = fn_addr; args })
 
-  (* Be cautious that each element is 1 byte long. *)
-  (* Strings and bytes are always treated the same. *)
-  | Pgetstringitem
   | Pgetbytesitem ->
       let str = List.nth args 0 in
       let i = List.nth args 1 in
       
-      let altered = new_temp Mtype.T_string in
+      let altered = new_temp T_string in
       Basic_vec.push ssa (Add { rd = altered; rs1 = str; rs2 = i });
       Basic_vec.push ssa (Load { rd; rs = altered; offset = 0; byte = 1 })
 
   | Psetbytesitem ->
       let str = List.nth args 0 in
       let i = List.nth args 1 in
+      let item = List.nth args 2 in
       
-      let altered = new_temp Mtype.T_string in
+      let altered = new_temp T_string in
       Basic_vec.push ssa (Add { rd = altered; rs1 = str; rs2 = i });
-      Basic_vec.push ssa (Store { rd; rs = altered; offset = 0; byte = 1 })
+      Basic_vec.push ssa (Store { rd = item; rs = altered; offset = 0; byte = 1 })
 
+  (* Be cautious that each `char` is 2 bytes long, which is extremely counter-intuitive. *)
+  | Pgetstringitem ->
+      let str = List.nth args 0 in
+      let i = List.nth args 1 in
+      
+      let two = new_temp T_int in
+      let offset = new_temp T_int in
+      let altered = new_temp T_string in
+      Basic_vec.push ssa (AssignInt { rd = two; imm = 2L });
+      Basic_vec.push ssa (Mul { rd = offset; rs1 = i; rs2 = two });
+      Basic_vec.push ssa (Add { rd = altered; rs1 = str; rs2 = offset });
+      Basic_vec.push ssa (Load { rd; rs = altered; offset = 0; byte = 2 })
+
+  (* Length are both stored at the same place for these arrays. *)
   | Pstringlength
   | Pbyteslength ->
       let bytes = List.hd args in
@@ -253,10 +266,10 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       let init = List.nth args 1 in
 
       (* Let the pointer point to beginning of data, rather than the length section *)
-      let memory = new_temp Mtype.T_bytes in
-      let unused = new_temp Mtype.T_unit in
-      let int_sz = new_temp Mtype.T_int in
-      let new_len = new_temp Mtype.T_int in
+      let memory = new_temp T_bytes in
+      let unused = new_temp T_unit in
+      let int_sz = new_temp T_int in
+      let new_len = new_temp T_int in
       Basic_vec.push ssa (AssignInt { rd = int_sz; imm = 4L });
       Basic_vec.push ssa (Add { rd = new_len; rs1 = len; rs2 = int_sz });
       Basic_vec.push ssa (CallExtern { rd = memory; fn = "malloc"; args = [ new_len ] });
@@ -279,21 +292,21 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
 
 
 (** Extract information from types and store them in global variables. *)
-let update_types ({ defs; _ }: Mtype.defs) =
-  let types = Mtype.Id_hash.to_list defs in
+let update_types ({ defs; _ }: defs) =
+  let types = Id_hash.to_list defs in
 
   let visit (name, info) =
     match info with
-    | Mtype.Placeholder -> ()
-    | Mtype.Externref -> ()
+    | Placeholder -> ()
+    | Externref -> ()
 
     (* We don't care about declarations in traits. *)
-    | Mtype.Trait _ -> ()
+    | Trait _ -> ()
 
     (* Calculate offset of fields in record types. *)
-    | Mtype.Record { fields } -> 
-        let ty = Mtype.T_constr name in
-        let extract (x: Mtype.field_info) = x.field_type in
+    | Record { fields } -> 
+        let ty = T_constr name in
+        let extract (x: field_info) = x.field_type in
         let field_types = List.map extract fields in
         let field_sizes = List.map sizeof field_types in
         let offset = ref 0 in
@@ -317,10 +330,10 @@ let record_traits (methods: Object_util.t) =
 
     let vtb_size = Hashtbl.find trait_table ty |> Basic_vec.length in
 
-    (* Note: traits are originally converted from Stype.T_trait to Mtype.T_trait, *)
+    (* Note: traits are originally converted from Stype.T_trait to T_trait, *)
     (* and the former takes a Basic_type_path, as expected. *)
     (* However, the conversion function needs additional information which is unknown at this stage. *)
-    Hashtbl.add trait_offset (ty, Mtype.T_trait trait_name) vtb_size;
+    Hashtbl.add trait_offset (ty, T_trait trait_name) vtb_size;
     Basic_vec.append (Hashtbl.find trait_table ty) (Basic_vec.of_list methods)
   )
 
@@ -369,12 +382,12 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let ty = obj.ty in
 
       let trait_name = Basic_type_path.sexp_of_t trait |> S.to_string in
-      let delta = Hashtbl.find trait_offset (ty, Mtype.T_trait trait_name) in
+      let delta = Hashtbl.find trait_offset (ty, T_trait trait_name) in
 
       (* Temporary variables used in SSA *)
-      let load = new_temp Mtype.T_int in
-      let vtb = new_temp Mtype.T_bytes in
-      let altered = new_temp Mtype.T_bytes in
+      let load = new_temp T_int in
+      let vtb = new_temp T_bytes in
+      let altered = new_temp T_bytes in
 
       (* Alter the vtable offset according to the trait *)
       Basic_vec.push ssa (Load { rd = vtb; rs = obj; offset = 0; byte = pointer_size });
@@ -394,8 +407,8 @@ let rec do_convert ssa (expr: Mcore.expr) =
           let ifso = new_label "sequand_if_" in
           let ifnot = new_label "sequand_else_" in
           let ifexit = new_label "sequand_exit_" in
-          let t1 = new_temp Mtype.T_bool in
-          let t2 = new_temp Mtype.T_bool in
+          let t1 = new_temp T_bool in
+          let t2 = new_temp T_bool in
           let cond = do_convert ssa rs1 in
           Basic_vec.push ssa (Branch { cond; ifso; ifnot });
 
@@ -418,8 +431,8 @@ let rec do_convert ssa (expr: Mcore.expr) =
           let ifso = new_label "sequor_if_" in
           let ifnot = new_label "sequor_else_" in
           let ifexit = new_label "sequor_exit_" in
-          let t1 = new_temp Mtype.T_bool in
-          let t2 = new_temp Mtype.T_bool in
+          let t1 = new_temp T_bool in
+          let t2 = new_temp T_bool in
           let cond = do_convert ssa rs1 in
           Basic_vec.push ssa (Branch { cond; ifso; ifnot });
 
@@ -446,7 +459,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
       (match name with
       | Pmutable_ident _ ->
           (* We use `bytes` to represent arbitrary pointers. *)
-          let space = new_temp Mtype.T_bytes in
+          let space = new_temp T_bytes in
           let rd = { name = Ident.to_string name; ty = rs.ty } in
           Basic_vec.push ssa (Malloc { rd = space; size = sizeof rs.ty });
           Basic_vec.push ssa (Assign { rd; rs = space });
@@ -475,9 +488,9 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
             (* Trait themselves can't derive another trait, *)
             (* so no worries about diamond inheritance *)
-            let load = new_temp Mtype.T_int in
-            let vtb = new_temp Mtype.T_bytes in
-            let altered = new_temp Mtype.T_bytes in
+            let load = new_temp T_int in
+            let vtb = new_temp T_bytes in
+            let altered = new_temp T_bytes in
             let offset = -pointer_size in
             let byte = pointer_size in 
 
@@ -689,7 +702,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
   (* Assigns mutable variables. *)
   | Cexpr_assign { var; expr; ty } ->
       let rd = do_convert ssa expr in
-      let rs = { name = Ident.to_string var; ty = Mtype.T_bytes } in
+      let rs = { name = Ident.to_string var; ty = T_bytes } in
       Basic_vec.push ssa (Store { rd; rs; offset = 0; byte = sizeof rd.ty });
       unit
 
@@ -703,7 +716,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
       (if has_vtable then
         let beginning = new_temp ty in
-        let load = new_temp Mtype.T_int in
+        let load = new_temp T_int in
 
         (* We construct vtable before every field *)
         (* and let `rd` point at where fields start *)
@@ -713,8 +726,8 @@ let rec do_convert ssa (expr: Mcore.expr) =
         Basic_vec.push ssa (Add { rd; rs1 = beginning; rs2 = load });
 
         (* Load in vtable *)
-        let vtb = new_temp Mtype.T_bytes in
-        let label = Printf.sprintf "vtable_%s" (Mtype.to_string ty |> remove_space) in
+        let vtb = new_temp T_bytes in
+        let label = Printf.sprintf "vtable_%s" (to_string ty |> remove_space) in
         Basic_vec.push ssa (AssignLabel { rd = vtb; imm = label });
         Basic_vec.push ssa (Store { rd = vtb; rs = rd; offset = -pointer_size; byte = pointer_size })
       else
@@ -742,7 +755,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let rd = new_temp ty in
       let tys =
         (match ty with
-        | Mtype.T_tuple { tys } -> tys
+        | T_tuple { tys } -> tys
         | _ -> failwith "riscv_ssa.ml: bad tuple")
       in
 
@@ -800,9 +813,29 @@ let rec do_convert ssa (expr: Mcore.expr) =
   | Cexpr_const { c; ty; _ } ->
       let rd = new_temp ty in
       let instruction = (match c with
-      (* This is not C-style string. \0 is allowed to appear. *)
-      (* In this case, we treat strings and bytes as the same thing. *)
-      | C_string v 
+      (* Note each element of string is 2 bytes long. TODO *)
+      | C_string v ->
+          let label = Printf.sprintf "str_%d" !slot in
+          let vals = String.to_seq v |> List.of_seq in
+          let len = String.length v |> Int.to_string in
+          let vec = Basic_vec.empty () in
+
+          List.iter (fun x ->
+            Basic_vec.push vec (Char.code x);
+            Basic_vec.push vec 0) vals;
+          let values = len :: Basic_vec.map_into_list vec Int.to_string in
+
+          slot := !slot + 1;
+          Basic_vec.push global_inst (ExtArray { label; values });
+
+          (* Let the pointer point to beginning of data, rather than the length section *)
+          let beginning = new_temp T_bytes in
+          let four = new_temp T_int in
+          Basic_vec.push ssa (ExtArray { label; values });
+          Basic_vec.push ssa (AssignLabel { rd = beginning; imm = label; });
+          Basic_vec.push ssa (AssignInt { rd = four; imm = 4L });
+          Add { rd; rs1 = beginning; rs2 = four }
+
       | C_bytes { v; _ } ->
           let label = Printf.sprintf "bytes_%d" !slot in
           let vals = String.to_seq v |> List.of_seq |> List.map (fun x -> Char.code x |> Int.to_string) in
@@ -813,8 +846,8 @@ let rec do_convert ssa (expr: Mcore.expr) =
           Basic_vec.push global_inst (ExtArray { label; values });
 
           (* Let the pointer point to beginning of data, rather than the length section *)
-          let beginning = new_temp Mtype.T_bytes in
-          let four = new_temp Mtype.T_int in
+          let beginning = new_temp T_bytes in
+          let four = new_temp T_int in
           Basic_vec.push ssa (ExtArray { label; values });
           Basic_vec.push ssa (AssignLabel { rd = beginning; imm = label; });
           Basic_vec.push ssa (AssignInt { rd = four; imm = 4L });
@@ -844,7 +877,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
 let generate_vtables () =
   Hashtbl.iter (fun ty methods ->
-    let label_raw = Printf.sprintf "vtable_%s" (Mtype.to_string ty) in
+    let label_raw = Printf.sprintf "vtable_%s" (to_string ty) in
     let label = remove_space label_raw in
     Basic_vec.push global_inst (ExtArray { label; values = Basic_vec.to_list methods })
   ) trait_table
@@ -934,7 +967,7 @@ let ssa_of_mcore (core: Mcore.t) =
   in
 
   (* Add _start *)
-  let unused = new_temp Mtype.T_unit in
+  let unused = new_temp T_unit in
   Basic_vec.push _start (Call { rd = unused; fn = "main"; args = [] });
   Basic_vec.push _start (Return unused);
 
