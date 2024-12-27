@@ -6,6 +6,8 @@
 #include <cstring>
 #include <functional>
 #include <map>
+#include <codecvt>
+#include <locale>
 
 const int unit = unit;
 
@@ -54,8 +56,9 @@ int int_of(std::string s) {
 }
 
 #define RTYPE(name, op) std::make_pair(name, [](uint64_t x, uint64_t y) { return x op y; })
-#define MEM(name, type) std::make_pair(name, [](uint64_t x, int offset) { return *((type*) x + offset); })
+#define MEM(name, type) std::make_pair(name, [](uint64_t x, int offset) { return *((type*) (x + offset)); })
 #define VAL(i) regs[args[i]]
+
 // Argument `label` is where we start interpreting.
 uint64_t interpret(std::string label) {
     static std::map<std::string, std::function<uint64_t (uint64_t, uint64_t)>> rtype = {
@@ -79,6 +82,7 @@ uint64_t interpret(std::string label) {
 
     static std::map<std::string, std::function<uint64_t (uint64_t, int)>> load = {
         MEM("lb", char),
+        MEM("lh", char16_t),
         MEM("lw", int),
         MEM("ld", uint64_t),
     };
@@ -93,25 +97,29 @@ uint64_t interpret(std::string label) {
 
             if (rtype.contains(op)) {
                 VAL(1) = rtype[op](VAL(2), VAL(3));
+                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
                 continue;
             }
 
             if (load.contains(op)) {
                 VAL(1) = load[op](VAL(2), int_of(args[3]));
+                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
                 continue;
             }
 
-            if (op == "sd" || op == "sb" || op == "sw") {
+            if (op == "sd" || op == "sb" || op == "sw" || op == "sh") {
                 auto rd = VAL(1);
                 auto rs = VAL(2);
                 auto offset = int_of(args[3]);
 
                 if (op == "sb")
-                    *((char*)rs + offset) = rd;
+                    *((char*)(rs + offset)) = rd;
+                if (op == "sh")
+                    *((char16_t*)(rs + offset)) = rd;
                 if (op == "sw")
-                    *((int*)rs + offset) = rd;
+                    *((int*)(rs + offset)) = rd;
                 if (op == "sd")
-                    *((uint64_t*)rs + offset) = rd;
+                    *((uint64_t*)(rs + offset)) = rd;
                 continue;
             }
 
@@ -119,17 +127,39 @@ uint64_t interpret(std::string label) {
                 auto fn = args[2];
                 for (int i = 0; i < fns[fn].size(); i++) {
                     regs[fns[fn][i]] = VAL(i + 3);
+                    std::cerr << fns[fn][i] << " <- " << VAL(i + 3) << "\n";
                 }
                 VAL(1) = interpret(fn);
+                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
+                continue;
+            }
+
+            if (op == "call_indirect") {
+                // Remember, we store function names in the pointer
+                std::string fn(*(char**) VAL(2));
+                std::cerr << "jump to " << fn << "\n";
+                for (int i = 0; i < fns[fn].size(); i++) {
+                    regs[fns[fn][i]] = VAL(i + 3);
+                    std::cerr << fns[fn][i] << " <- " << VAL(i + 3) << "\n";
+                }
+                VAL(1) = interpret(fn);
+                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
                 continue;
             }
 
             if (op == "call_libc") {
-                if (args[2] == "puts")
-                    puts((char*) VAL(3));
+                if (args[2] == "puts") {
+                    std::u16string utf16_str((char16_t*) VAL(3));
+
+                    // Convert to UTF-8, so that cout can output it
+                    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
+                    std::string utf8_string = convert.to_bytes(utf16_str);
+
+                    std::cout << utf8_string << std::endl;
+                }
 
                 if (args[2] == "malloc")
-                    VAL(1) = (uint64_t) new char(VAL(3));
+                    VAL(1) = (uint64_t) new char[VAL(3)];
 
                 if (args[2] == "strlen")
                     VAL(1) = (uint64_t) strlen((char*) VAL(3));
@@ -145,9 +175,10 @@ uint64_t interpret(std::string label) {
             }
 
             if (op == "malloc") {
-                auto offset = int_of(args[2]);
+                auto len = int_of(args[2]);
 
-                VAL(1) = (uint64_t) malloc(offset);
+                VAL(1) = (uint64_t) new char[len];
+                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
                 continue;
             }
 
@@ -160,6 +191,7 @@ uint64_t interpret(std::string label) {
                     if (plabel == prev) {
                         VAL(1) = regs[var];
                         is_bad = false;
+                        std::cerr << args[1] << " = " << VAL(1) << "\n\n";
                         break;
                     }
                 }
@@ -175,11 +207,13 @@ uint64_t interpret(std::string label) {
                 auto rs1 = int_of(args[2]);
 
                 VAL(1) = rs1;
+                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
                 continue;
             }
 
             if (op == "mv" || op == "la") {
                 VAL(1) = VAL(2);
+                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
                 continue;
             }
 
@@ -253,21 +287,21 @@ int main(int argc, char** argv) {
                 // Remove leading "global array " and trailing ":"
                 auto name = str.substr(13, str.size() - 14);
 
-                // Look at the next line, i.e. contents
+                // Look at the next line, i.e. contents of the array
                 std::string content;
                 std::getline(ifs, content);
-                strip(content);
+                content = strip(content);
 
                 auto elems = split(content, ", ");
                 size_t len = elems.size();
                 char* space = nullptr;
 
-                // For bytes, the first element is an integer, and others are bytes
-                if (name.starts_with("bytes_")) {
+                // For bytes and strings, the first element is an integer, and others are bytes
+                if (name.starts_with("bytes_") || name.starts_with("str_")) {
                     space = new char[len + 3];
                     * (int*) space = int_of(elems[0]);
                     for (int i = 1; i < len; i++)
-                        space[i + 4] = int_of(elems[i]);
+                        space[i + 3] = int_of(elems[i]);
                 }
 
                 // For vtable, the elements are all function pointers
@@ -278,14 +312,6 @@ int main(int argc, char** argv) {
                         char* name = new char[elems[i].size() + 1];
                         strcpy(name, elems[i].c_str());
                         *(uint64_t*)(space + i * 8) = (uint64_t) name;
-                    }
-                }
-
-                // For strings, they are just c-style strings
-                if (name.starts_with("str_")) {
-                    space = new char[len + 1];
-                    for (int i = 0; i < len; i++) {
-                        space[i] = int_of(elems[i]);
                     }
                 }
 

@@ -14,11 +14,12 @@ class DirContext:
     def __exit__(self, exc_type, exc_value, traceback):
         os.chdir(self.original)
 
-parser = argparse.ArgumentParser(prog = "test", description = "Test the MoonBit compiler")
+parser = argparse.ArgumentParser(prog = "test", description = "Tests the MoonBit compiler.")
 
-parser.add_argument("-d", "--debug", action="store_true", help="Enables stack traces on debug.")
-parser.add_argument("-w", "--wasm", action="store_true", help="Builds to WASM, rather than RISC-V.")
-parser.add_argument("-i", "--build-index", action="store_true", help="Builds the OCaml index only, and then exits.")
+parser.add_argument("-d", "--debug", action="store_true", help="enable stack traces on debug")
+parser.add_argument("-w", "--wasm", action="store_true", help="build to WASM rather than RISC-V")
+parser.add_argument("-i", "--build-index", action="store_true", help="build OCaml index and exit")
+parser.add_argument("-b", "--build-only", action="store_true", help="build without testing")
 
 args = parser.parse_args()
 
@@ -46,16 +47,26 @@ def try_remove(path):
 # Build
 if args.build_index:    
     os.system("dune build @ocaml-index")
+    print("Done")
     exit(0)
 
 print("Building MoonBit compiler...")
 os.system("dune build -p moonbit-lang")
 
 print("Building SSA interpreter...")
-os.system("clang++ -std=c++20 -fuse-ld=lld test/interpreter.cpp -O3 -o test/build/interpreter")
+os.system("clang++ -std=c++20 -fuse-ld=lld test/interpreter.cpp -Wall -g -o test/build/interpreter")
 
+if args.build_only:
+    print("Done.")
+    exit(0)
+
+if args.wasm:
+    print("WASM target does not support testing. Exit.")
+    exit(0)
 
 with DirContext("test"):
+    os.makedirs("build", exist_ok=True);
+        
     print(f"Execute task: {src}")
     # Remove all previously compiled files.
     try_remove(f"{src}.core")
