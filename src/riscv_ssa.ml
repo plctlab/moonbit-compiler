@@ -366,6 +366,13 @@ let is_trait ty = match ty with
 
 let pointer_size = 8
 
+(** Label of current basic block. Used in phi-function generation. *)
+let current_label = ref ""
+
+let push_label ssa label =
+  current_label := label;
+  Basic_vec.push ssa (Label label)
+
 (* This is the size of their representations, not the actual size. *)
 let rec sizeof ty = match ty with
 | Mtype.T_bool -> 1
@@ -782,17 +789,18 @@ let rec do_convert ssa (expr: Mcore.expr) =
           let cond = do_convert ssa rs1 in
           Basic_vec.push ssa (Branch { cond; ifso; ifnot });
 
-          Basic_vec.push ssa (Label ifso);
+          push_label ssa ifso;
           let rs = do_convert ssa rs2 in
+          let ifso_from = !current_label in
           Basic_vec.push ssa (Assign { rd = t1; rs });
           Basic_vec.push ssa (Jump ifexit);
 
-          Basic_vec.push ssa (Label ifnot);
+          push_label ssa ifnot;
           Basic_vec.push ssa (AssignInt { rd = t2; imm = 0L; });
           Basic_vec.push ssa (Jump ifexit);
 
-          Basic_vec.push ssa (Label ifexit);
-          Basic_vec.push ssa (Phi { rd; rs = [(t1, ifso); (t2, ifnot) ]})
+          push_label ssa ifexit;
+          Basic_vec.push ssa (Phi { rd; rs = [(t1, ifso_from); (t2, ifnot) ]})
 
       | Psequor, [rs1; rs2] ->
           (* Short circuiting, compile into if-else *)
@@ -805,17 +813,18 @@ let rec do_convert ssa (expr: Mcore.expr) =
           let cond = do_convert ssa rs1 in
           Basic_vec.push ssa (Branch { cond; ifso; ifnot });
 
-          Basic_vec.push ssa (Label ifso);
+          push_label ssa ifso;
           Basic_vec.push ssa (AssignInt { rd = t1; imm = 1L; });
           Basic_vec.push ssa (Jump ifexit);
 
-          Basic_vec.push ssa (Label ifnot);
+          push_label ssa ifnot;
           let rs = do_convert ssa rs2 in
+          let ifnot_from = !current_label in
           Basic_vec.push ssa (Assign { rd = t2; rs });
           Basic_vec.push ssa (Jump ifexit);
 
-          Basic_vec.push ssa (Label ifexit);
-          Basic_vec.push ssa (Phi { rd; rs = [(t1, ifso); (t2, ifnot) ]})
+          push_label ssa ifexit;
+          Basic_vec.push ssa (Phi { rd; rs = [(t1, ifso); (t2, ifnot_from) ]})
 
       | _ -> 
           let args = List.map (fun expr -> do_convert ssa expr) args in
@@ -923,14 +932,8 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let cond = do_convert ssa cond in
 
       let ifso_ssa = Basic_vec.empty () in 
-      let ifso_result = do_convert ifso_ssa ifso in
-
       let ifnot_ssa = Basic_vec.empty () in
-      let ifnot_result =
-        (match ifnot with
-        | None -> unit
-        | Some x -> do_convert ifnot_ssa x)
-      in
+
 
       let ifso_label = new_label "ifso_" in
       let ifnot_label = new_label "ifnot_" in
@@ -955,17 +958,25 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
       Basic_vec.push ssa (Branch { cond; ifso = ifso_label; ifnot = ifnot_label });
 
-      Basic_vec.push ssa (Label ifso_label);
+      push_label ssa ifso_label;
+      let ifso_result = do_convert ifso_ssa ifso in
+      let ifso_from = !current_label in
       Basic_vec.append ssa ifso_ssa;
       Basic_vec.push ssa (Jump ifexit_label);
 
-      Basic_vec.push ssa (Label ifnot_label);
+      push_label ssa ifnot_label;
+      let ifnot_result =
+        (match ifnot with
+        | None -> unit
+        | Some x -> do_convert ifnot_ssa x)
+      in
+      let ifnot_from = !current_label in
       Basic_vec.append ssa ifnot_ssa;
       Basic_vec.push ssa (Jump ifexit_label);
 
-      Basic_vec.push ssa (Label ifexit_label);
+      push_label ssa ifexit_label;
       Basic_vec.push ssa (Phi
-        { rd; rs = [(ifso_result, ifso_label); (ifnot_result, ifnot_label)] });
+        { rd; rs = [(ifso_result, ifso_from); (ifnot_result, ifnot_from)] });
       
       rd
 
@@ -1002,24 +1013,25 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let before = Printf.sprintf "before_%s" loop in
       let exit = Printf.sprintf "exit_%s" loop in
 
-      (* Generate body. `conts` will be filled by Cexpr_continue. *)
-      let body_ssa = Basic_vec.empty () in
-      let _ = do_convert body_ssa body in
-
       (* Start generating according to the template described above. *)
       
       (* Generate `before`. *)
 
       Basic_vec.push ssa (Jump before);
-      Basic_vec.push ssa (Label before);
+      push_label ssa before;
+      let before_from = !current_label in
       let results = List.map (do_convert ssa) args in
-      let cont = List.map (fun x -> (x, before)) results in
+      let cont = List.map (fun x -> (x, before_from)) results in
       conts := cont :: !conts;
+      Basic_vec.push ssa (Jump loop);
 
       (* Calculate the φ-call. *)
 
-      Basic_vec.push ssa (Jump loop);
-      Basic_vec.push ssa (Label loop);
+      push_label ssa loop;
+
+      (* Generate loop body. `conts` will be filled by Cexpr_continue. *)
+      let body_ssa = Basic_vec.empty () in
+      let _ = do_convert body_ssa body in
 
       let rec transpose lst =
         match lst with
@@ -1040,7 +1052,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
       Basic_vec.append ssa body_ssa;
       Basic_vec.push ssa (Jump exit);
-      Basic_vec.push ssa (Label exit);
+      push_label ssa exit;
 
       (* Store `conts` back; let outer loop go on normally. *)
       conts := old_conts;
@@ -1051,11 +1063,12 @@ let rec do_convert ssa (expr: Mcore.expr) =
       (* Generate a label, and let the previous block jump to this block. *)
       let cont = new_label "continue_" in
       Basic_vec.push ssa (Jump cont);
-      Basic_vec.push ssa (Label cont);
+      push_label ssa cont;
 
       (* Evaluate arguments and update `conts`. *)
       let results = List.map (do_convert ssa) args in
-      let new_cont = List.map (fun x -> (x, cont)) results in
+      let cont_from = !current_label in
+      let new_cont = List.map (fun x -> (x, cont_from)) results in
       conts := new_cont :: !conts;
 
       (* Jump back to the beginning of the loop. *)
@@ -1290,7 +1303,8 @@ let convert_toplevel _start (top: Mcore.top_item) =
   | _ -> failwith "TODO: riscv_ssa.ml: don't know this toplevel"
 
 let ssa_of_mcore (core: Mcore.t) =
-  Basic_io.write_s "core.ir" (Mcore.sexp_of_t core);
+  let out = Printf.sprintf "%s.ir" !Driver_config.Linkcore_Opt.output_file  in
+  Basic_io.write_s out (Mcore.sexp_of_t core);
 
   (* Body of the function `_start`, which is the entry point *)
   let _start = Basic_vec.empty () in

@@ -145,22 +145,20 @@ uint64_t interpret(std::string label) {
             }
 
             if (op == "malloc") {
-                auto rd = args[1];
                 auto offset = int_of(args[2]);
 
-                regs[rd] = (uint64_t) malloc(offset);
+                VAL(1) = (uint64_t) malloc(offset);
                 continue;
             }
 
             if (op == "phi") {
-                auto rd = args[1];
                 bool is_bad = true;
 
                 for (int i = 2; i < args.size(); i += 2) {
                     auto var = args[i];
                     auto plabel = args[i + 1];
                     if (plabel == prev) {
-                        regs[rd] = regs[var];
+                        VAL(1) = regs[var];
                         is_bad = false;
                         break;
                     }

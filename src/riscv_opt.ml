@@ -107,7 +107,18 @@ let build_cfg fn body =
     Basic_vec.iter block.succ (fun succ -> Basic_vec.push (block_of succ).pred name) 
   ) basic_blocks
 
-let visit_fn f ssa = 
+
+(** Similar to `List.iter`, but iterates on contents of functions. *)
+let iter_fn f ssa = 
+  let visit (toplevel: instruction) =
+    match toplevel with
+    | FnDecl { fn; body; _ } -> f fn
+    | _ -> ()
+  in
+  List.iter visit ssa
+
+(** Similar to `iter_fn`, but gives two arguments to `f`. *)
+let iter_fn2 f ssa = 
   let visit (toplevel: instruction) =
     match toplevel with
     | FnDecl { fn; body; _ } -> f fn body
@@ -115,6 +126,7 @@ let visit_fn f ssa =
   in
   List.iter visit ssa
 
+(** Similar to `List.map`, but maps on contents of functions. *)
 let map_fn f ssa =
   let map_aux (toplevel: instruction) = 
     match toplevel with
@@ -123,8 +135,21 @@ let map_fn f ssa =
   in
   List.map map_aux ssa
 
-(** Sets to store live variables. *)
+(** Sets to store live variables or basic blocks. *)
 module Varset = Set.Make(String)
+
+(** Find all basic blocks in function `fn`. *)
+let get_blocks fn =
+  let blocks = Basic_vec.empty () in
+  let visited = ref Varset.empty in
+  let rec aux x = 
+    if not (Varset.mem x !visited) then
+      (Basic_vec.push blocks x;
+      visited := Varset.add x !visited;
+      Basic_vec.iter (block_of x).succ aux)
+  in
+  aux fn;
+  blocks |> Basic_vec.to_list
 
 (**
 Liveness analysis.
@@ -136,18 +161,7 @@ this hash table gives all variables alive at the exit of it.
 let liveness_analysis fn =
   let live_in = Hashtbl.create 1024 in
   let live_out = Hashtbl.create 1024 in
-
-  (* Find all basic blocks in the function `fn` *)
-  let blocks = Basic_vec.make ~dummy:"" 32 in
-  let visited = ref Varset.empty in
-  let rec get_blocks x =
-    if not (Varset.mem x !visited) then
-      Basic_vec.push blocks x;
-      visited := Varset.add x !visited;
-      Basic_vec.iter (block_of x).succ get_blocks
-  in
-  get_blocks fn;
-  let blocks = Basic_vec.to_list blocks in
+  let blocks = get_blocks fn in
 
   (* Initialize live_in and live_out to empty *)
   List.iter (fun name ->
@@ -196,25 +210,18 @@ let liveness_analysis fn =
   
   live_out
 
+(** Converts the optimized control flow graph back into SSA. *)
 let ssa_of_cfg fn = 
   let inst = Basic_vec.empty () in
-  let visited = ref Varset.empty in
-  let rec get_blocks x =
-    if not (Varset.mem x !visited) then
-      let block = block_of x in
-
-      (* Body does not contain labels; *)
-      (* Fill it in here *)
-      Basic_vec.push inst (Riscv_ssa.Label x);
-      Basic_vec.append inst block.body;
-      visited := Varset.add x !visited;
-      Basic_vec.iter block.succ get_blocks
-  in
-  get_blocks fn;
+  let blocks = get_blocks fn in
+  List.iter (fun x ->
+    Basic_vec.push inst (Riscv_ssa.Label x);
+    Basic_vec.append inst (block_of x).body
+  ) blocks;
   inst |> Basic_vec.to_list
 
 let opt ssa =
-  visit_fn build_cfg ssa;
+  iter_fn2 build_cfg ssa;
   let s = map_fn ssa_of_cfg ssa in
   let out = Printf.sprintf "%s.ssa" !Driver_config.Linkcore_Opt.output_file in
   Basic_io.write out (String.concat "\n" (List.map Riscv_ssa.to_string s));
