@@ -14,6 +14,7 @@ let add fn fn_decl = Hashtbl.add internals fn (fn_decl fn)
 Performs a byte copy from src to dst.
 
 fn unsafe_bytes_blit (dst, dst_offset, src, src_offset, length) {
+  ; copy
   add %1 dst dst_offset
   add %2 src src_offset
   call_libc %3 memcpy %1 %2 length
@@ -46,11 +47,21 @@ let unsafe_bytes_blit fn =
 Performs a substring operation, but returns a new copy.
 Note we need to store length at the beginning.
 
+Since each string character is 2 bytes long, the string length
+is actually half of the argument `length`.
+
 fn unsafe_bytes_sub_string (src, offset, length) {
+  ; allocate space
   li %1 4
   add %2 length %1
   call dst malloc %2
-  sw length dst
+  
+  ; divide length by 2
+  li %6 1
+  shr %7 length %6
+  sw %7 dst
+
+  ; copy
   add %3 dst %1
   add %4 src offset
   call %5 memcpy %3 %4 length
@@ -70,15 +81,24 @@ let unsafe_bytes_sub_string fn =
   let _3 = new_temp T_bytes in
   let _4 = new_temp T_bytes in
   let _5 = new_temp T_unit in
+  let _6 = new_temp T_int in
+  let _7 = new_temp T_int in
   let dst = new_temp T_bytes in
   let body = [
+    (* Allocate space *)
     AssignInt { rd = _1; imm = 4L };
     Add { rd = _2; rs1 = length; rs2 = _1 };
     CallExtern { rd = dst; fn = "malloc"; args = [ _2 ] };
-    Store { rd = length; rs = dst; offset = 0; byte = 4 };
+
+    (* Divide length by 2 *)
+    AssignInt { rd = _6; imm = 1L };
+    Shr { rd = _7; rs1 = length; rs2 = _6 };
+    Store { rd = _7; rs = dst; offset = 0; byte = 4 };
+    
+    (* Copy *)
     Add { rd = _3; rs1 = dst; rs2 = _1 };
     Add { rd = _4; rs1 = src; rs2 = offset };
-    CallExtern { rd = _5; fn = "memcpy"; args = [ _3; _4 ] };
+    CallExtern { rd = _5; fn = "memcpy"; args = [ _3; _4; length ] };
     Return _3;
   ] in
   (args, body)

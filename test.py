@@ -20,6 +20,7 @@ parser.add_argument("-d", "--debug", action="store_true", help="enable stack tra
 parser.add_argument("-w", "--wasm", action="store_true", help="build to WASM rather than RISC-V")
 parser.add_argument("-i", "--build-index", action="store_true", help="build OCaml index and exit")
 parser.add_argument("-b", "--build-only", action="store_true", help="build without testing")
+parser.add_argument("-v", "--verbose", action="store_true", help="interpreter outputs detailed values")
 
 args = parser.parse_args()
 
@@ -32,12 +33,16 @@ else:
 
 core = "~/.moon/lib/core"
 bundled = f"{core}/target/wasm-gc/release/bundle"
-src = "basic"
 
 if args.debug:
     debug = "OCAMLRUNPARAM=b"
 else:
     debug = ""
+    
+if args.verbose:
+    verbose = "-DVERBOSE"
+else:
+    verbose = ""
 
 def try_remove(path):
     if os.path.exists(path):
@@ -54,7 +59,7 @@ print("Building MoonBit compiler...")
 os.system("dune build -p moonbit-lang")
 
 print("Building SSA interpreter...")
-os.system("clang++ -std=c++20 -fuse-ld=lld test/interpreter.cpp -Wall -g -o test/build/interpreter")
+os.system(f"clang++ -std=c++20 {verbose} test/interpreter.cpp -Wall -g -o test/build/interpreter")
 
 if args.build_only:
     print("Done.")
@@ -66,19 +71,25 @@ if args.wasm:
 
 with DirContext("test"):
     os.makedirs("build", exist_ok=True);
+    
+    cases = os.listdir("src");
+    
+    for src in cases:
+        print(f"Execute task: {src}")
+        # Remove all previously compiled files.
+        try_remove(f"{src}.core")
+        try_remove(f"{src}.mi")
+        try_remove(f"{dest}")
+
+        # Note build-package is ignorant of target. It builds to a common IR.
+        os.system(f"moonc build-package src/{src}/{src}.mbt -is-main -std-path {bundled} -o build/{src}.core")
+
+        # Linkage emits target code.
+        os.system(f"{debug} moonc link-core {bundled}/core.core build/{src}.core -o build/{dest} -pkg-config-path {src}/moon.pkg.json -pkg-sources {core}:{src} -target {target}")
+
+        # Test.
+        os.system(f"build/interpreter build/{dest}.ssa > build/output.txt")
+        diff = os.system(f"diff build/output.txt src/{src}/{src}.ans")
         
-    print(f"Execute task: {src}")
-    # Remove all previously compiled files.
-    try_remove(f"{src}.core")
-    try_remove(f"{src}.mi")
-    try_remove(f"{dest}")
-
-    # Note build-package is ignorant of target. It builds to a common IR.
-    os.system(f"moonc build-package src/{src}/{src}.mbt -is-main -std-path {bundled} -o build/{src}.core")
-
-    # Linkage emits target code.
-    os.system(f"{debug} moonc link-core {bundled}/core.core build/{src}.core -o build/{dest} -pkg-config-path {src}/moon.pkg.json -pkg-sources {core}:{src} -target {target}")
-
-    # Test.
-    os.system(f"build/interpreter build/{dest}.ssa > build/output.txt")
-    os.system(f"diff build/output.txt src/{src}/{src}.ans")
+        if diff == 0:
+            print("Passed.")

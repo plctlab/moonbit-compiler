@@ -59,6 +59,14 @@ int int_of(std::string s) {
 #define MEM(name, type) std::make_pair(name, [](uint64_t x, int offset) { return *((type*) (x + offset)); })
 #define VAL(i) regs[args[i]]
 
+#ifdef VERBOSE
+#define OUTPUT(name, value) std::cerr << "\t" << name << " = " << value << "\n\n"
+#define SAY(str) std::cerr << str << "\n"
+#else
+#define OUTPUT(name, value)
+#define SAY(str)
+#endif
+
 // Argument `label` is where we start interpreting.
 uint64_t interpret(std::string label) {
     static std::map<std::string, std::function<uint64_t (uint64_t, uint64_t)>> rtype = {
@@ -91,19 +99,24 @@ uint64_t interpret(std::string label) {
 
     for (;;) {
         for (auto x : blocks[label]) {
-            std::cerr << x << std::endl;
+            SAY(x);
             auto args = split(x, " ");
             auto op = args[0];
 
             if (rtype.contains(op)) {
                 VAL(1) = rtype[op](VAL(2), VAL(3));
-                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
+                OUTPUT(args[1], VAL(1));
                 continue;
             }
 
             if (load.contains(op)) {
                 VAL(1) = load[op](VAL(2), int_of(args[3]));
-                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
+                OUTPUT(args[1], VAL(1));
+                continue;
+            }
+
+            if (op == "neg") {
+                VAL(1) = -VAL(2);
                 continue;
             }
 
@@ -127,23 +140,23 @@ uint64_t interpret(std::string label) {
                 auto fn = args[2];
                 for (int i = 0; i < fns[fn].size(); i++) {
                     regs[fns[fn][i]] = VAL(i + 3);
-                    std::cerr << fns[fn][i] << " <- " << VAL(i + 3) << "\n";
+                    OUTPUT(fns[fn][i], VAL(i + 3));
                 }
                 VAL(1) = interpret(fn);
-                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
+                OUTPUT(args[1], VAL(1));
                 continue;
             }
 
             if (op == "call_indirect") {
                 // Remember, we store function names in the pointer
                 std::string fn(*(char**) VAL(2));
-                std::cerr << "jump to " << fn << "\n";
+                SAY("jump to " << fn);
                 for (int i = 0; i < fns[fn].size(); i++) {
                     regs[fns[fn][i]] = VAL(i + 3);
-                    std::cerr << fns[fn][i] << " <- " << VAL(i + 3) << "\n";
+                    OUTPUT(fns[fn][i], VAL(i + 3));
                 }
                 VAL(1) = interpret(fn);
-                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
+                OUTPUT(args[1], VAL(1));
                 continue;
             }
 
@@ -156,29 +169,42 @@ uint64_t interpret(std::string label) {
                     std::string utf8_string = convert.to_bytes(utf16_str);
 
                     std::cout << utf8_string << std::endl;
+                    continue;
                 }
 
-                if (args[2] == "malloc")
+                if (args[2] == "malloc") {
                     VAL(1) = (uint64_t) new char[VAL(3)];
+                    continue;
+                }
 
-                if (args[2] == "strlen")
+                if (args[2] == "strlen") {
                     VAL(1) = (uint64_t) strlen((char*) VAL(3));
+                    continue;
+                }
 
-                if (args[2] == "memset")
-                    memset((void*) VAL(3), VAL(4), VAL(5)),
+                if (args[2] == "memset") {
+                    memset((void*) VAL(3), VAL(4), VAL(5));
                     VAL(1) = unit;
+                    continue;
+                }
+
+                if (args[2] == "memcpy") {
+                    memcpy((void*) VAL(3), (void*) VAL(4), VAL(5));
+                    continue;
+                }
 
                 if (args[2] == "abort")
                     abort();
 
-                continue;
+                std::cerr << "Unknown libc call: " << args[2] << std::endl;
+                exit(3);
             }
 
             if (op == "malloc") {
                 auto len = int_of(args[2]);
 
                 VAL(1) = (uint64_t) new char[len];
-                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
+                OUTPUT(args[1], VAL(1));
                 continue;
             }
 
@@ -191,7 +217,7 @@ uint64_t interpret(std::string label) {
                     if (plabel == prev) {
                         VAL(1) = regs[var];
                         is_bad = false;
-                        std::cerr << args[1] << " = " << VAL(1) << "\n\n";
+                        OUTPUT(args[1], VAL(1));
                         break;
                     }
                 }
@@ -207,13 +233,13 @@ uint64_t interpret(std::string label) {
                 auto rs1 = int_of(args[2]);
 
                 VAL(1) = rs1;
-                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
+                OUTPUT(args[1], VAL(1));
                 continue;
             }
 
             if (op == "mv" || op == "la") {
                 VAL(1) = VAL(2);
-                std::cerr << args[1] << " = " << VAL(1) << "\n\n";
+                OUTPUT(args[1], VAL(1));
                 continue;
             }
 
