@@ -21,6 +21,7 @@ parser.add_argument("-w", "--wasm", action="store_true", help="build to WASM rat
 parser.add_argument("-i", "--build-index", action="store_true", help="build OCaml index and exit")
 parser.add_argument("-b", "--build-only", action="store_true", help="build without testing")
 parser.add_argument("-v", "--verbose", action="store_true", help="interpreter outputs detailed values")
+parser.add_argument("-t", "--test", type=str, help="execute this test case only")
 
 args = parser.parse_args()
 
@@ -34,15 +35,8 @@ else:
 core = "~/.moon/lib/core"
 bundled = f"{core}/target/wasm-gc/release/bundle"
 
-if args.debug:
-    debug = "OCAMLRUNPARAM=b"
-else:
-    debug = ""
-    
-if args.verbose:
-    verbose = "-DVERBOSE"
-else:
-    verbose = ""
+debug = "OCAMLRUNPARAM=b" if args.debug else ""
+verbose = "-DVERBOSE" if args.verbose else ""
 
 def try_remove(path):
     if os.path.exists(path):
@@ -70,10 +64,10 @@ if args.wasm:
     exit(0)
 
 with DirContext("test"):
-    os.makedirs("build", exist_ok=True);
+    os.makedirs("build", exist_ok=True)
     
-    cases = os.listdir("src");
-    
+    cases = os.listdir("src") if args.test is None else [args.test]
+     
     for src in cases:
         print(f"Execute task: {src}")
         # Remove all previously compiled files.
@@ -88,7 +82,7 @@ with DirContext("test"):
         os.system(f"{debug} moonc link-core {bundled}/core.core build/{src}.core -o build/{dest} -pkg-config-path {src}/moon.pkg.json -pkg-sources {core}:{src} -target {target}")
 
         # Test.
-        os.system(f"build/interpreter build/{dest}.ssa > build/output.txt")
+        os.system(f"build/interpreter build/{dest}.ssa > build/output.txt 2> build/debug.txt")
         diff = os.system(f"diff build/output.txt src/{src}/{src}.ans")
         
         if diff == 0:
