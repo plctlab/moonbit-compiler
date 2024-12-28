@@ -19,7 +19,7 @@ std::map<std::string, std::vector<std::string>> fns;
 
 // Values of registers used when interpreting.
 // TODO: currently no FP supported.
-std::map<std::string, uint64_t> regs;
+std::map<std::string, int64_t> regs;
 
 std::vector<std::string> split(std::string s, std::string delim) {
     size_t start = 0, end;
@@ -55,8 +55,8 @@ int int_of(std::string s) {
     return atoi(s.c_str());
 }
 
-#define RTYPE(name, op) std::make_pair(name, [](uint64_t x, uint64_t y) { return x op y; })
-#define MEM(name, type) std::make_pair(name, [](uint64_t x, int offset) { return *((type*) (x + offset)); })
+#define RTYPE(name, op) std::make_pair(name, [](int64_t x, int64_t y) { return x op y; })
+#define MEM(name, type) std::make_pair(name, [](int64_t x, int offset) { return *((type*) (x + offset)); })
 #define VAL(i) regs[args[i]]
 
 #ifdef VERBOSE
@@ -68,8 +68,8 @@ int int_of(std::string s) {
 #endif
 
 // Argument `label` is where we start interpreting.
-uint64_t interpret(std::string label) {
-    static std::map<std::string, std::function<uint64_t (uint64_t, uint64_t)>> rtype = {
+int64_t interpret(std::string label) {
+    static std::map<std::string, std::function<int64_t (int64_t, int64_t)>> rtype = {
         RTYPE("add", +),
         RTYPE("sub", -),
         RTYPE("mul", *),
@@ -88,11 +88,11 @@ uint64_t interpret(std::string label) {
         RTYPE("shr", >>),
     };
 
-    static std::map<std::string, std::function<uint64_t (uint64_t, int)>> load = {
+    static std::map<std::string, std::function<int64_t (int64_t, int)>> load = {
         MEM("lb", char),
         MEM("lh", char16_t),
         MEM("lw", int),
-        MEM("ld", uint64_t),
+        MEM("ld", int64_t),
     };
 
     std::string prev;
@@ -132,22 +132,32 @@ uint64_t interpret(std::string label) {
                 if (op == "sw")
                     *((int*)(rs + offset)) = rd;
                 if (op == "sd")
-                    *((uint64_t*)(rs + offset)) = rd;
+                    *((int64_t*)(rs + offset)) = rd;
+            
+                OUTPUT(args[1], VAL(1));
                 continue;
             }
 
             if (op == "call") {
+                auto before = regs;
+
                 auto fn = args[2];
                 for (int i = 0; i < fns[fn].size(); i++) {
                     regs[fns[fn][i]] = VAL(i + 3);
                     OUTPUT(fns[fn][i], VAL(i + 3));
                 }
-                VAL(1) = interpret(fn);
+
+                auto value = interpret(fn);
+                regs = before;
+                VAL(1) = value;
+
                 OUTPUT(args[1], VAL(1));
                 continue;
             }
 
             if (op == "call_indirect") {
+                auto before = regs;
+                
                 // Remember, we store function names in the pointer
                 std::string fn(*(char**) VAL(2));
                 SAY("jump to " << fn);
@@ -155,30 +165,45 @@ uint64_t interpret(std::string label) {
                     regs[fns[fn][i]] = VAL(i + 3);
                     OUTPUT(fns[fn][i], VAL(i + 3));
                 }
-                VAL(1) = interpret(fn);
+                
+                auto value = interpret(fn);
+                regs = before;
+                VAL(1) = value;
+
                 OUTPUT(args[1], VAL(1));
                 continue;
             }
 
             if (op == "call_libc") {
+                for (int i = 3; i < args.size(); i++)
+                    OUTPUT(args[i], VAL(i));
+                
                 if (args[2] == "puts") {
-                    std::u16string utf16_str((char16_t*) VAL(3));
+                    // Make the output string null-terminated
+                    int len = *(int*) (VAL(3) - 4);
+                    auto ptr = new char16_t[len + 1];
+                    memcpy(ptr, (void*) VAL(3), len * 2);
+                    ptr[len] = 0;
+
+                    std::u16string utf16_str(ptr);
 
                     // Convert to UTF-8, so that cout can output it
                     std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
                     std::string utf8_string = convert.to_bytes(utf16_str);
 
+                    for (int i = 0; i < len * 2; i++)
+                        OUTPUT("char of byte " << i, *(char*) (ptr + i));
                     std::cout << utf8_string << std::endl;
                     continue;
                 }
 
                 if (args[2] == "malloc") {
-                    VAL(1) = (uint64_t) new char[VAL(3)];
+                    VAL(1) = (int64_t) new char[VAL(3)];
                     continue;
                 }
 
                 if (args[2] == "strlen") {
-                    VAL(1) = (uint64_t) strlen((char*) VAL(3));
+                    VAL(1) = (int64_t) strlen((char*) VAL(3));
                     continue;
                 }
 
@@ -203,7 +228,7 @@ uint64_t interpret(std::string label) {
             if (op == "malloc") {
                 auto len = int_of(args[2]);
 
-                VAL(1) = (uint64_t) new char[len];
+                VAL(1) = (int64_t) new char[len];
                 OUTPUT(args[1], VAL(1));
                 continue;
             }
@@ -337,7 +362,7 @@ int main(int argc, char** argv) {
                     for (int i = 0; i < len; i++) {
                         char* name = new char[elems[i].size() + 1];
                         strcpy(name, elems[i].c_str());
-                        *(uint64_t*)(space + i * 8) = (uint64_t) name;
+                        *(int64_t*)(space + i * 8) = (int64_t) name;
                     }
                 }
 
@@ -345,7 +370,7 @@ int main(int argc, char** argv) {
                     std::cerr << "Bad SSA: unrecognized global array type\n";
                     return 2;
                 }
-                regs[name] = (uint64_t) space;
+                regs[name] = (int64_t) space;
                 continue;
             }
 
