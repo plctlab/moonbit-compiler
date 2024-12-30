@@ -5,7 +5,7 @@ type instruction = Riscv_ssa.t
 
 (** Note: `body` does not include the label before instructions. *)
 type basic_block = {
-  body: instruction Basic_vec.t;
+  mutable body: instruction Basic_vec.t;
   succ: string Basic_vec.t;
   pred: string Basic_vec.t;
 }
@@ -39,7 +39,7 @@ let build_cfg fn body =
   (* The first basic block in each function is unnamed, *)
   (* so we take the function name as its name. *)
   let name = ref fn in
-  let vec = ref (Basic_vec.make ~dummy:Riscv_ssa.Nop 16) in
+  let vec = ref (Basic_vec.empty ()) in
 
   (* There might be multiple jumps at end of each basic block. *)
   (* Clean them up. *)
@@ -67,7 +67,7 @@ let build_cfg fn body =
         Basic_vec.append (block_of !name).body (tidy !vec);
 
         (* Clear the instructions; Basic_vec does not offer clear() or something alike *)
-        vec := Basic_vec.make ~dummy:Riscv_ssa.Nop 16;
+        vec := Basic_vec.empty ();
         name := label
     
     | x -> Basic_vec.push !vec x)
@@ -138,7 +138,7 @@ let map_fn f ssa =
 (** Sets to store live variables or basic blocks. *)
 module Varset = Set.Make(String)
 
-(** Find all basic blocks in function `fn`. *)
+(** Find all basic blocks in function `fn`, in depth-first order. *)
 let get_blocks fn =
   let blocks = Basic_vec.empty () in
   let visited = ref Varset.empty in
@@ -219,10 +219,3 @@ let ssa_of_cfg fn =
     Basic_vec.append inst (block_of x).body
   ) blocks;
   inst |> Basic_vec.to_list
-
-let opt ssa =
-  iter_fn2 build_cfg ssa;
-  let s = map_fn ssa_of_cfg ssa in
-  let out = Printf.sprintf "%s.ssa" !Driver_config.Linkcore_Opt.output_file in
-  Basic_io.write out (String.concat "\n" (List.map Riscv_ssa.to_string s));
-  s

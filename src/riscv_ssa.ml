@@ -26,6 +26,13 @@ type r2_type = {
   rs1: var;
 }
 
+(** I-type, with one destination register, one source and one immediate. *)
+type i_type = {
+  rd: var;
+  rs: var;
+  imm: int;
+}
+
 (** Calls function named `fn` with arguments `args`, and store the result in `rd`. *)
 type call_data = {
   rd: var;
@@ -47,6 +54,11 @@ We needn't care about immediate sizes.
 Those should be handled in arithmetic operations.
 *)
 type assign_int = {
+  rd: var;
+  imm: int;
+}
+
+type assign_int64 = {
   rd: var;
   imm: int64;
 }
@@ -107,16 +119,16 @@ type malloc = {
   size: int;
 }
 
+type branch = {
+  cond: var;
+  ifso: string;
+  ifnot: string;
+}
+
 type fn = {
   fn: string;
   args: var list;
   body: t list;
-}
-
-and branch = {
-  cond: var;
-  ifso: string;
-  ifnot: string;
 }
 
 (** Instructions available in 3-address code and SSA. *)
@@ -143,6 +155,15 @@ and t =
 | Xor of r_type
 | Not of r2_type
 
+(* I-type operations *)
+| Addi of i_type
+| Andi of i_type
+| Ori of i_type
+| Xori of i_type
+| Slli of i_type      (* Left shift *)
+| Srli of i_type      (* Right shift (unsigned) *)
+| Slti of i_type      (* Set less than *)
+
 (* Floating point operations *)
 | FAdd of r_type
 | FSub of r_type
@@ -159,6 +180,7 @@ and t =
 (* Others *)
 | Call of call_data
 | AssignInt of assign_int
+| AssignInt64 of assign_int64
 | AssignFP of assign_fp
 | AssignLabel of assign_str
 | Assign of assign
@@ -175,7 +197,6 @@ and t =
 | CallIndirect of call_indirect
 | Malloc of malloc
 | Return of var
-| Nop
 
 (* Note: *)
 (* GlobalVarDecl is only a declaration. *)
@@ -193,6 +214,10 @@ let to_string t =
 
   let r2type op ({ rd; rs1; }: r2_type) =
     Printf.sprintf "%s %s %s" op rd.name rs1.name
+  in
+
+  let itype op ({ rd; rs; imm } : i_type) =
+    Printf.sprintf "%s %s %s %d" op rd.name rs.name imm
   in
 
   let die x =
@@ -223,6 +248,14 @@ let to_string t =
     | Xor r -> rtype "xor" r
     | Not r -> r2type "not" r
 
+    | Addi i -> itype "addi" i
+    | Andi i -> itype "andi" i
+    | Ori i -> itype "ori" i
+    | Xori i -> itype "xori" i
+    | Slli i -> itype "slli" i
+    | Srli i -> itype "srli" i
+    | Slti i -> itype "slti" i
+
     | FAdd r -> rtype "fadd" r
     | FSub r -> rtype "fsub" r
     | FMul r -> rtype "fmul" r
@@ -248,6 +281,9 @@ let to_string t =
         Printf.sprintf "call_indirect %s %s %s" rd.name rs.name args_list
 
     | AssignInt { rd; imm; } ->
+        Printf.sprintf "li %s %d" rd.name imm
+
+    | AssignInt64 { rd; imm; } ->
         Printf.sprintf "li %s %s" rd.name (Int64.to_string imm)
 
     | AssignFP { rd; imm; } ->
@@ -308,8 +344,6 @@ let to_string t =
 
     | Return var ->
         Printf.sprintf "return %s" var.name
-    
-    | Nop -> "nop"
   
   in str t 0
 
@@ -333,6 +367,13 @@ let rec reg_map fd fs t = match t with
 | Shl { rd; rs1; rs2; } -> Shl { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
 | Xor { rd; rs1; rs2; } -> Xor { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
 | Not { rd; rs1 } -> Not { rd = fd rd; rs1 = fs rs1 }
+| Addi { rd; rs; imm } -> Addi { rd = fd rd; rs = fs rs; imm }
+| Andi { rd; rs; imm } -> Andi { rd = fd rd; rs = fs rs; imm }
+| Ori { rd; rs; imm } -> Ori { rd = fd rd; rs = fs rs; imm }
+| Xori { rd; rs; imm } -> Xori { rd = fd rd; rs = fs rs; imm }
+| Slli { rd; rs; imm } -> Slli { rd = fd rd; rs = fs rs; imm }
+| Srli { rd; rs; imm } -> Srli { rd = fd rd; rs = fs rs; imm }
+| Slti { rd; rs; imm } -> Slti { rd = fd rd; rs = fs rs; imm }
 | FAdd { rd; rs1; rs2; } -> FAdd { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
 | FSub { rd; rs1; rs2; } -> FSub { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
 | FMul { rd; rs1; rs2; } -> FMul { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
@@ -348,6 +389,7 @@ let rec reg_map fd fs t = match t with
 | CallExtern { rd; fn; args } -> CallExtern { rd = fd rd; fn; args = List.map fs args }
 | CallIndirect { rd; rs; args } -> CallIndirect { rd = fd rd; rs = fs rs; args = List.map fs args }
 | AssignInt { rd; imm; } -> AssignInt { rd = fd rd; imm; }
+| AssignInt64 { rd; imm; } -> AssignInt64 { rd = fd rd; imm; }
 | AssignFP { rd; imm; } -> AssignFP { rd = fd rd; imm; }
 | AssignLabel { rd; imm } -> AssignLabel { rd = fd rd; imm; }
 | Assign { rd; rs } -> Assign { rd = fd rd; rs = fs rs }
@@ -362,7 +404,6 @@ let rec reg_map fd fs t = match t with
 | ExtArray arr -> ExtArray arr
 | Malloc { rd; size } -> Malloc { rd = fd rd; size }
 | Return var -> Return (fs var)
-| Nop -> Nop
 
 (** Variables that has been accessed in this instruction. *)
 let use t =

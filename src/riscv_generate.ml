@@ -138,9 +138,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
         (match from, to_ with
         | I32, U8 | U32, U8 ->
             (* Discard higher bits by masking them away *)
-            let mask = new_temp T_int in
-            Basic_vec.push ssa (AssignInt { rd = mask; imm = 255L });
-            Basic_vec.push ssa (And { rd; rs1 = arg; rs2 = mask })
+            Basic_vec.push ssa (Andi { rd; rs = arg; imm = 255 })
         
         | _ -> die())
 
@@ -153,7 +151,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       let buf_size = if length = 0 then 0 else length * (sizeof (List.hd args).ty) in
       Basic_vec.push ssa (Malloc { rd; size = 12 });
       Basic_vec.push ssa (Malloc { rd = buf; size = buf_size });
-      Basic_vec.push ssa (AssignInt { rd = len; imm = Int64.of_int length; });
+      Basic_vec.push ssa (AssignInt { rd = len; imm = length; });
       Basic_vec.push ssa (Store { rd = buf; rs = rd; offset = 0; byte = pointer_size });
       Basic_vec.push ssa (Store { rd = len; rs = rd; offset = pointer_size; byte = 4 });
 
@@ -178,7 +176,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
         let offset = new_temp T_int in
 
         (* Same as `rd = *(arr + sizeof(T) * index)` *)
-        Basic_vec.push ssa (AssignInt { rd = sz; imm = Int64.of_int size; });
+        Basic_vec.push ssa (AssignInt { rd = sz; imm = size; });
         Basic_vec.push ssa (Mul { rd = offset; rs1 = sz; rs2 = index });
         Basic_vec.push ssa (Add { rd = addr; rs1 = arr; rs2 = offset });
         Basic_vec.push ssa (Load { rd; rs = addr; offset = 0; byte = size });
@@ -199,7 +197,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
             let sz = new_temp T_int in
             let length = new_temp T_int in
             (* Same as `rd = malloc(sizeof(T) * len)` *)
-            Basic_vec.push ssa (AssignInt { rd = sz; imm = Int64.of_int size; });
+            Basic_vec.push ssa (AssignInt { rd = sz; imm = size; });
             Basic_vec.push ssa (Mul { rd = length; rs1 = sz; rs2 = len });
             Basic_vec.push ssa (CallExtern { rd; fn = "malloc"; args = [length] })
 
@@ -218,7 +216,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       let load = new_temp T_int in
 
       Basic_vec.push ssa (Load { rd = vtb; rs = arg; offset = -pointer_size; byte = pointer_size });
-      Basic_vec.push ssa (AssignInt { rd = load; imm = Int64.of_int vtb_offset });
+      Basic_vec.push ssa (AssignInt { rd = load; imm = vtb_offset });
       Basic_vec.push ssa (Add { rd = fn_addr; rs1 = vtb; rs2 = load });
       (* The whole set of args (including self) is needed. *)
       Basic_vec.push ssa (CallIndirect { rd; rs = fn_addr; args })
@@ -248,7 +246,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       let two = new_temp T_int in
       let offset = new_temp T_int in
       let altered = new_temp T_string in
-      Basic_vec.push ssa (AssignInt { rd = two; imm = 2L });
+      Basic_vec.push ssa (AssignInt { rd = two; imm = 2 });
       Basic_vec.push ssa (Mul { rd = offset; rs1 = i; rs2 = two });
       Basic_vec.push ssa (Add { rd = altered; rs1 = str; rs2 = offset });
       Basic_vec.push ssa (Load { rd; rs = altered; offset = 0; byte = 2 })
@@ -268,13 +266,11 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       (* Let the pointer point to beginning of data, rather than the length section *)
       let memory = new_temp T_bytes in
       let unused = new_temp T_unit in
-      let int_sz = new_temp T_int in
       let new_len = new_temp T_int in
-      Basic_vec.push ssa (AssignInt { rd = int_sz; imm = 4L });
-      Basic_vec.push ssa (Add { rd = new_len; rs1 = len; rs2 = int_sz });
+      Basic_vec.push ssa (Addi { rd = new_len; rs = len; imm = 4 });
       Basic_vec.push ssa (CallExtern { rd = memory; fn = "malloc"; args = [ new_len ] });
       Basic_vec.push ssa (Store { rd = len; rs = memory; offset = 0; byte = 4 });
-      Basic_vec.push ssa (Add { rd; rs1 = memory; rs2 = int_sz });
+      Basic_vec.push ssa (Addi { rd; rs = memory; imm = 4 });
       Basic_vec.push ssa (CallExtern { rd = unused; fn = "memset"; args = [ rd; init; len ] });
 
   | Pignore -> ()
@@ -391,7 +387,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
       (* Alter the vtable offset according to the trait *)
       Basic_vec.push ssa (Load { rd = vtb; rs = obj; offset = 0; byte = pointer_size });
-      Basic_vec.push ssa (AssignInt { rd = load; imm = Int64.of_int delta });
+      Basic_vec.push ssa (AssignInt { rd = load; imm = delta });
       Basic_vec.push ssa (Add { rd = altered; rs1 = vtb; rs2 = load });
       Basic_vec.push ssa (Store { rd = altered; rs = obj; offset = 0; byte = pointer_size });
       obj
@@ -419,7 +415,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
           Basic_vec.push ssa (Jump ifexit);
 
           push_label ssa ifnot;
-          Basic_vec.push ssa (AssignInt { rd = t2; imm = 0L; });
+          Basic_vec.push ssa (AssignInt { rd = t2; imm = 0; });
           Basic_vec.push ssa (Jump ifexit);
 
           push_label ssa ifexit;
@@ -437,7 +433,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
           Basic_vec.push ssa (Branch { cond; ifso; ifnot });
 
           push_label ssa ifso;
-          Basic_vec.push ssa (AssignInt { rd = t1; imm = 1L; });
+          Basic_vec.push ssa (AssignInt { rd = t1; imm = 1; });
           Basic_vec.push ssa (Jump ifexit);
 
           push_label ssa ifnot;
@@ -496,7 +492,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
             (* Before calling, we must advance the pointer to the correct offset *)
             Basic_vec.push before (Load { rd = vtb; rs = arg; offset; byte });
-            Basic_vec.push before (AssignInt { rd = load; imm = Int64.of_int delta });
+            Basic_vec.push before (AssignInt { rd = load; imm = delta });
             Basic_vec.push before (Add { rd = altered; rs1 = vtb; rs2 = load });
             Basic_vec.push before (Store { rd = altered; rs = arg; offset; byte });
 
@@ -722,7 +718,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
         (* and let `rd` point at where fields start *)
         (* in order to unite traited and untraited types *)
         Basic_vec.push ssa (Malloc { rd = beginning; size = size + pointer_size });
-        Basic_vec.push ssa (AssignInt { rd = load; imm = Int64.of_int pointer_size });
+        Basic_vec.push ssa (AssignInt { rd = load; imm = pointer_size });
         Basic_vec.push ssa (Add { rd; rs1 = beginning; rs2 = load });
 
         (* Load in vtable *)
@@ -812,7 +808,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
   | Cexpr_const { c; ty; _ } ->
       let rd = new_temp ty in
-      let instruction = (match c with
+      (match c with
       (* Note each element of string is 2 bytes long. TODO *)
       | C_string v ->
           let label = Printf.sprintf "str_%d" !slot in
@@ -830,11 +826,9 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
           (* Let the pointer point to beginning of data, rather than the length section *)
           let beginning = new_temp T_bytes in
-          let four = new_temp T_int in
           Basic_vec.push ssa (ExtArray { label; values });
           Basic_vec.push ssa (AssignLabel { rd = beginning; imm = label; });
-          Basic_vec.push ssa (AssignInt { rd = four; imm = 4L });
-          Add { rd; rs1 = beginning; rs2 = four }
+          Basic_vec.push ssa (Addi { rd; rs = beginning; imm = 4 })
 
       | C_bytes { v; _ } ->
           let label = Printf.sprintf "bytes_%d" !slot in
@@ -847,32 +841,24 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
           (* Let the pointer point to beginning of data, rather than the length section *)
           let beginning = new_temp T_bytes in
-          let four = new_temp T_int in
           Basic_vec.push ssa (ExtArray { label; values });
           Basic_vec.push ssa (AssignLabel { rd = beginning; imm = label; });
-          Basic_vec.push ssa (AssignInt { rd = four; imm = 4L });
-          Add { rd; rs1 = beginning; rs2 = four }
-
-
+          Basic_vec.push ssa (Addi { rd; rs = beginning; imm = 4 })
+  
+      | C_int64 { v; _ } | C_uint64 { v; _ }  ->
+          Basic_vec.push ssa (AssignInt64 { rd; imm = v });
       | C_bool imm ->
-          AssignInt { rd; imm = Int64.of_int (if imm then 1 else 0); }
+          Basic_vec.push ssa (AssignInt { rd; imm = if imm then 1 else 0; })
       | C_char imm ->
-          AssignInt { rd; imm = Int64.of_int (Uchar.to_int imm); }
-      | C_int { v; _ } ->
-          AssignInt { rd; imm = Int64.of_int32 v; }
-      | C_int64 { v; _ } ->
-          AssignInt { rd; imm = v; }
-      | C_uint { v; _ } ->
-          AssignInt { rd; imm = Int64.of_int32 v; }
-      | C_uint64 { v; _ } ->
-          AssignInt { rd; imm = v; }
+          Basic_vec.push ssa (AssignInt { rd; imm = Uchar.to_int imm; })
+      | C_int { v; _ } | C_uint { v; _ }  ->
+          Basic_vec.push ssa (AssignInt { rd; imm = Int32.to_int v; })
       | C_float { v; _ } ->
-          AssignFP { rd; imm = v; }
+          Basic_vec.push ssa (AssignFP { rd; imm = v; })
       | C_double { v; _ } ->
-          AssignFP { rd; imm = v; }
+          Basic_vec.push ssa (AssignFP { rd; imm = v; })
       | C_bigint _ -> failwith "TODO: riscv_ssa.ml: bigint not supported"
-      ) in
-      Basic_vec.push ssa instruction;
+      );
       rd
 
 let generate_vtables () =

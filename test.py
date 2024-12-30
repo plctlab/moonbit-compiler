@@ -53,6 +53,7 @@ print("Building MoonBit compiler...")
 os.system("dune build -p moonbit-lang")
 
 print("Building SSA interpreter...")
+os.makedirs("test/build", exist_ok=True)
 os.system(f"clang++ -std=c++20 {verbose} test/interpreter.cpp -Wall -g -o test/build/interpreter")
 
 if args.build_only:
@@ -64,22 +65,20 @@ if args.wasm:
     exit(0)
 
 with DirContext("test"):
-    os.makedirs("build", exist_ok=True)
-    
     cases = os.listdir("src") if args.test is None else [args.test]
      
     for src in cases:
         print(f"Execute task: {src}")
-        # Remove all previously compiled files.
-        try_remove(f"{src}.core")
-        try_remove(f"{src}.mi")
-        try_remove(f"{dest}")
 
         # Note build-package is ignorant of target. It builds to a common IR.
         os.system(f"moonc build-package src/{src}/{src}.mbt -is-main -std-path {bundled} -o build/{src}.core")
 
         # Linkage emits target code.
         os.system(f"{debug} moonc link-core {bundled}/core.core build/{src}.core -o build/{dest} -pkg-config-path {src}/moon.pkg.json -pkg-sources {core}:{src} -target {target}")
+        
+        # Remove intermediate files that we don't need.
+        try_remove(f"build/{src}.core")
+        try_remove(f"build/{src}.mi")
 
         # Test.
         os.system(f"build/interpreter build/{dest}.ssa > build/output.txt 2> build/debug.txt")

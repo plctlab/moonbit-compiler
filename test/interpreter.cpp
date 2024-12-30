@@ -57,6 +57,7 @@ int int_of(std::string s) {
 
 #define RTYPE(name, op) std::make_pair(name, [](int64_t x, int64_t y) { return x op y; })
 #define MEM(name, type) std::make_pair(name, [](int64_t x, int offset) { return *((type*) (x + offset)); })
+#define ITYPE(name, op) std::make_pair(name, [](int64_t x, int imm) -> int64_t { return x op imm; })
 #define VAL(i) regs[args[i]]
 
 #ifdef VERBOSE
@@ -95,6 +96,16 @@ int64_t interpret(std::string label) {
         MEM("ld", int64_t),
     };
 
+    static std::map<std::string, std::function<int64_t (int64_t, int)>> itype = {
+        ITYPE("addi", +),
+        ITYPE("srli", >>),
+        ITYPE("slli", <<),
+        ITYPE("andi", &),
+        ITYPE("ori", |),
+        ITYPE("xori", ^),
+        ITYPE("slti", <)
+    };
+
     std::string prev;
 
     for (;;) {
@@ -111,6 +122,12 @@ int64_t interpret(std::string label) {
 
             if (load.contains(op)) {
                 VAL(1) = load[op](VAL(2), int_of(args[3]));
+                OUTPUT(args[1], VAL(1));
+                continue;
+            }
+
+            if (itype.contains(op)) {
+                VAL(1) = itype[op](VAL(2), int_of(args[3]));
                 OUTPUT(args[1], VAL(1));
                 continue;
             }

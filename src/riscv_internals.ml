@@ -52,17 +52,15 @@ is actually half of the argument `length`.
 
 fn unsafe_bytes_sub_string (src, offset, length) {
   ; allocate space
-  li %1 4
-  add %2 length %1
+  addi %2 length 4
   call dst malloc %2
   
   ; divide length by 2
-  li %6 1
-  shr %7 length %6
-  sw %7 dst
+  srli %1 length 1
+  sw %1 dst
 
   ; copy
-  add %3 dst %1
+  addi %3 dst 4
   add %4 src offset
   call %5 memcpy %3 %4 length
   return %3
@@ -81,22 +79,18 @@ let unsafe_bytes_sub_string fn =
   let _3 = new_temp T_bytes in
   let _4 = new_temp T_bytes in
   let _5 = new_temp T_unit in
-  let _6 = new_temp T_int in
-  let _7 = new_temp T_int in
   let dst = new_temp T_bytes in
   let body = [
     (* Allocate space *)
-    AssignInt { rd = _1; imm = 4L };
-    Add { rd = _2; rs1 = length; rs2 = _1 };
+    Addi { rd = _2; rs = length; imm = 4 };
     CallExtern { rd = dst; fn = "malloc"; args = [ _2 ] };
 
     (* Divide length by 2 *)
-    AssignInt { rd = _6; imm = 1L };
-    Shr { rd = _7; rs1 = length; rs2 = _6 };
-    Store { rd = _7; rs = dst; offset = 0; byte = 4 };
+    Srli { rd = _1; rs = length; imm = 1 };
+    Store { rd = _1; rs = dst; offset = 0; byte = 4 };
     
     (* Copy *)
-    Add { rd = _3; rs1 = dst; rs2 = _1 };
+    Addi { rd = _3; rs = dst; imm = 4 };
     Add { rd = _4; rs1 = src; rs2 = offset };
     CallExtern { rd = _5; fn = "memcpy"; args = [ _3; _4; length ] };
     Return _3;
