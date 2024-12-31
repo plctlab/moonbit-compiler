@@ -74,7 +74,11 @@ with DirContext("test"):
         os.system(f"moonc build-package src/{src}/{src}.mbt -is-main -std-path {bundled} -o build/{src}.core")
 
         # Linkage emits target code.
-        os.system(f"{debug} moonc link-core {bundled}/core.core build/{src}.core -o build/{dest} -pkg-config-path {src}/moon.pkg.json -pkg-sources {core}:{src} -target {target}")
+        ret = os.system(f"{debug} moonc link-core {bundled}/core.core build/{src}.core -o build/{dest} -pkg-config-path {src}/moon.pkg.json -pkg-sources {core}:{src} -target {target}")
+        
+        if ret != 0:
+            print("Internal error. Abort test.")
+            continue
         
         # Remove intermediate files that we don't need.
         try_remove(f"build/{src}.core")
