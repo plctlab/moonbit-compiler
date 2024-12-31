@@ -405,19 +405,17 @@ let rec reg_map fd fs t = match t with
 | Malloc { rd; size } -> Malloc { rd = fd rd; size }
 | Return var -> Return (fs var)
 
-(** Variables that has been accessed in this instruction. *)
-let use t =
-  let result = ref [] in
-  let fs = (fun x -> result := x :: !result; unit) in
-  reg_map (fun _ -> unit) fs t |> ignore;
-  !result
+let reg_iter fd fs t =
+  reg_map (fun x -> fd x; x) (fun x -> fs x; x) t |> ignore
 
-(** The variable defined in the instruction. *)
-let def t =
-  let result = ref [] in
-  let fd = (fun x -> result := x :: !result; unit) in
-  reg_map fd (fun _ -> unit) t |> ignore;
-  !result
+(** Iterate on `rd` only. *)
+let reg_iterd fd t =
+  reg_iter fd (fun x -> x) t
+
+(** Iterate on `rs` only. *)
+let reg_iters fs t =
+  reg_iter (fun x -> x) fs t
+
 (** Counter of temporaries. *)
 let slot = ref 0
 

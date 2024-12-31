@@ -159,14 +159,66 @@ for each basic block in this function,
 this hash table gives all variables alive at the exit of it.
 *)
 let liveness_analysis fn =
+  (* Variables alive at the beginning of basic block. *)
   let live_in = Hashtbl.create 1024 in
+
+  (* Variables alive at the end of basic block. *)
   let live_out = Hashtbl.create 1024 in
+
+  (* By `upward exposed`, we mean variables that are used but not defined in this block; *)
+  (* they rely on blocks `upwards`, hence the name. *)
+  (* See [The SSA Book](https://pfalcon.github.io/ssabook/latest/book-full.pdf), page 116. *)
+  let upward_exposed = Hashtbl.create 1024 in
+
+  (* Variables defined by phi-function. *)
+  let phidefs = Hashtbl.create 1024 in
+
+  (* Variables used by phi-function. *)
+  let phiuses = Hashtbl.create 1024 in
+
+  (* Variables defined in the basic block. *)
+  let defs = Hashtbl.create 1024 in
+
   let blocks = get_blocks fn in
 
   (* Initialize live_in and live_out to empty *)
   List.iter (fun name ->
     Hashtbl.add live_in name Varset.empty;
-    Hashtbl.add live_out name Varset.empty
+    Hashtbl.add live_out name Varset.empty;
+    Hashtbl.add upward_exposed name Varset.empty
+  ) blocks;
+
+  (* Precompute upward exposed variables. *)
+  List.iter (fun name ->
+    let block = block_of name in
+
+    let exposed = ref Varset.empty in
+    let defined = ref Varset.empty in
+    let phidef = ref Varset.empty in
+    let phiuse = ref Varset.empty in
+
+    Basic_vec.iter block.body (fun inst -> 
+      match inst with
+      | Phi { rd; rs } ->
+          phidef := Varset.add rd.name !phidef;
+          List.iter (fun (v, _) ->
+            (* Must type-annotate to make OCaml accept this *)
+            let v: Riscv_ssa.var = v in
+            phiuse := Varset.add v.name !phiuse
+          ) rs
+
+      | _ ->
+        Riscv_ssa.reg_iter
+          (fun rd -> defined := Varset.add rd.name !defined)
+          (fun rs ->
+            if not (Varset.mem rs.name !defined) then
+              exposed := Varset.add rs.name !exposed)
+        inst);
+
+    Hashtbl.add defs name !defined;
+    Hashtbl.add upward_exposed name !exposed;
+    Hashtbl.add phidefs name !phidef;
+    Hashtbl.add phiuses name !phiuse
   ) blocks;
 
   (* Keep doing until reaches fixed point *)
@@ -174,37 +226,34 @@ let liveness_analysis fn =
     let last_item = Basic_vec.pop_opt worklist in
     match last_item with
     | None -> ()
-    | Some fn -> 
-    List.iter (fun name ->
-      let block = block_of name in
-      let old_live_in = Hashtbl.find live_in name in
+    | Some fn ->
+        List.iter (fun name ->
+          let block = block_of name in
+          let old_live_in = Hashtbl.find live_in name in
 
-      (* Update live_out *)
-      (* It should be the union of live_in of all successors *)
-      let new_live_out =
-        List.fold_left (fun x succ_name ->
-          Varset.union x (Hashtbl.find live_in succ_name)
-        ) Varset.empty (Basic_vec.to_list block.succ)
-      in
-      
-      Hashtbl.replace live_out name new_live_out;
+          (* Update live_out *)
+          (* LiveOut(B) = \bigcup_{S\in succ(B)} (LiveIn(S) - PhiDefs(S)) \cup PhiUses(B) *)
+          let new_live_out =
+            Varset.union (List.fold_left (fun x s ->
+              Varset.union x (Varset.diff (Hashtbl.find live_in s) (Hashtbl.find phidefs s))
+            ) Varset.empty (Basic_vec.to_list block.succ)) (Hashtbl.find phiuses name)
+          in
+          
+          Hashtbl.replace live_out name new_live_out;
 
-      (* Re-calculate live-in *)
-      let body = Basic_vec.to_list block.body in
-      let def_var = List.concat_map Riscv_ssa.def body in
-      let use_var = List.concat_map Riscv_ssa.use body in
-      let def = List.map (fun (x: Riscv_ssa.var) -> x.name) def_var |> Varset.of_list in
-      let use = List.map (fun (x: Riscv_ssa.var) -> x.name) use_var |> Varset.of_list in
-      let new_live_in = Varset.union use (Varset.diff new_live_out def) in
+          (* Re-calculate live-in *)
+          (* LiveIn(B) = PhiDefs(B) \cup UpwardExposed(B) \cup (LiveOut(B) - Defs(B))*)
+          let new_live_in = Varset.union
+            (Varset.union (Hashtbl.find phidefs name) (Hashtbl.find upward_exposed name))
+            (Varset.diff new_live_out (Hashtbl.find defs name)) in
 
-      (* If live-in has changed, then all predecessors are subject to change; *)
-      (* Push all of them into worklist *)
-      if not (Varset.equal old_live_in new_live_in) then
-        Hashtbl.replace live_in name new_live_in;
-        Basic_vec.append worklist block.pred;
-      
-      iterate worklist
-    ) blocks;
+          (* If live-in has changed, then all predecessors are subject to change; *)
+          (* Push all of them into worklist *)
+          if not (Varset.equal old_live_in new_live_in) then
+            (Hashtbl.replace live_in name new_live_in;
+            Basic_vec.append worklist block.pred)
+        ) blocks;
+        iterate worklist
   in
   iterate (Hashtbl.find exit_fn fn);
   

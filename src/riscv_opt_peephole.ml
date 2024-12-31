@@ -114,6 +114,38 @@ let to_itype fn =
   in
   List.iter (fun block -> (block_of block).body <- convert block) blocks
 
+let remove_dead_variable fn =
+  let blocks = get_blocks fn in
+  let liveness = liveness_analysis fn in
+
+  let remove block = 
+    let body = (block_of block).body |> Basic_vec.to_list in
+
+    (* Variables alive at the end of block *)
+    let alive = Hashtbl.find liveness block in
+
+    (* Variables used inside the block *)
+    let used = ref Varset.empty in
+
+    List.iter (fun x ->
+      reg_iters (fun x -> used := Varset.add x.name !used) x
+    ) body;
+
+    let preserved = Varset.union !used alive in
+    List.filter (fun x ->
+      let preserve = ref true in
+      reg_iterd (fun x -> preserve := Varset.mem x.name preserved) x;
+
+      (* TODO: refine this, so that calls to pure functions are also eliminated *)
+      match x with
+      | Call _ | CallExtern _ | CallIndirect _ -> true
+      | _ -> !preserve
+    ) body;
+    |> Basic_vec.of_list
+  in
+  List.iter (fun block -> (block_of block).body <- remove block) blocks
+
 let peephole ssa = 
   iter_fn const_analysis ssa;
-  iter_fn to_itype ssa
+  iter_fn to_itype ssa;
+  iter_fn remove_dead_variable ssa
