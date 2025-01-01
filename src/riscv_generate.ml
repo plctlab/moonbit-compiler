@@ -9,9 +9,7 @@ let warn prim = match prim with
 | None -> ()
 | Some _ -> prerr_endline "warning: prim is not null"
 
-module Varset = Set.Make(String)
-
-let global_vars = ref Varset.empty
+let global_vars = ref Stringset.empty
 
 (** Global instructions, i.e. GlobalVarDecl and ExtArray *)
 let global_inst = Basic_vec.empty ()
@@ -30,6 +28,9 @@ let trait_offset = Hashtbl.create 64
 
 (** Indices of arguments that are trait types for each function, along with their types. *)
 let traited_args = Hashtbl.create 64
+
+(** All captured variables for each closure *)
+let captured = Hashtbl.create 64
 
 (** Get offset of the `pos`-th field in the record type called `name`. *)
 let offsetof ty pos = Hashtbl.find offset_table (ty, pos)
@@ -361,7 +362,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
       (* Global variables are pointers. *)
       (* Mutable variables are also pointers. *)
       let is_pointer = 
-        (Varset.mem name !global_vars) ||
+        (Stringset.mem name !global_vars) ||
         (match id with Pmutable_ident _ -> true | _ -> false)
       in
 
@@ -878,6 +879,66 @@ let convert_expr (expr: Mcore.expr) =
   Basic_vec.push ssa (Return return);
   Basic_vec.map_into_list ssa (fun x -> x)
 
+(** Traverse the whole expression tree. *)
+let rec iter_expr f (expr: Mcore.expr) =
+  f expr;
+  let go = iter_expr f in
+  match expr with
+  | Cexpr_prim { args } -> List.iter go args
+  | Cexpr_let { rhs; body } -> go rhs; go body
+  | Cexpr_letfn { fn; body } -> go fn.body; go body
+  | Cexpr_function { func } -> go func.body
+  | Cexpr_apply { args } -> List.iter go args
+  | Cexpr_object { self } -> go self
+  | Cexpr_letrec { body } -> go body
+  | Cexpr_constr { args } -> List.iter go args
+  | Cexpr_tuple { exprs } -> List.iter go exprs
+  | Cexpr_record_update { record } -> go record
+  | Cexpr_field { record } -> go record
+  | Cexpr_mutate { record; field } -> go record; go field
+  | Cexpr_array { exprs } -> List.iter go exprs
+  | Cexpr_assign { expr } -> go expr
+  | Cexpr_sequence { expr1; expr2 } -> go expr1; go expr2
+  | Cexpr_if { cond; ifso; ifnot } -> go cond; go ifso; Option.iter go ifnot
+  | Cexpr_switch_constr { obj; cases; default } -> go obj; List.iter (fun (a, b, c) -> go c) cases; Option.iter go default
+  | Cexpr_switch_constant { obj; cases; default } -> go obj; List.iter (fun (a, b) -> go b) cases; go default
+  | Cexpr_loop { body; args } -> go body; List.iter go args
+  | Cexpr_break { arg } -> Option.iter go arg
+  | Cexpr_continue { args } -> List.iter go args
+  | Cexpr_handle_error { obj } -> go obj
+  | Cexpr_return { expr } -> go expr
+  | _ -> ()
+
+let analyze_closure (top: Mcore.top_item) =
+
+  (* A list of all closures *)
+  let worklist = Basic_vec.empty () in
+
+  let find_closures (expr: Mcore.expr) =
+    match expr with
+    | Cexpr_letfn { fn; name; } ->
+        print_endline (Ident.to_string name);
+        Basic_vec.push worklist (fn, name)
+    | _ -> ()
+  in
+
+  let process ((fn: Mcore.fn), (name: Ident.t)) = 
+    let free_ident = Mcore_util.free_vars ~exclude:(Ident.Set.singleton name) fn in
+    let free_vars =
+      Array.map
+        (fun (ident, ty) -> { name = Ident.to_string ident; ty })
+        (free_ident |> Ident.Map.to_sorted_array)
+    in
+    Hashtbl.add captured fn (free_vars |> Array.to_list);
+  in
+
+  match top with
+  | Ctop_fn { func; _ } ->
+      iter_expr find_closures func.body;
+      Basic_vec.iter process worklist
+
+  | _ -> ()
+
 
 let convert_toplevel _start (top: Mcore.top_item) =
   let var_of_param ({ binder; ty; _ } : Mcore.param) =
@@ -905,7 +966,7 @@ let convert_toplevel _start (top: Mcore.top_item) =
 
   | Ctop_let { binder; expr; is_pub_; _ } ->
       let name = Ident.to_string binder in
-      global_vars := Varset.add name !global_vars;
+      global_vars := Stringset.add name !global_vars;
 
       let rd = do_convert _start expr in
       let var = { name = Ident.to_string binder; ty = rd.ty } in
@@ -940,6 +1001,7 @@ let ssa_of_mcore (core: Mcore.t) =
   record_traits core.object_methods;
 
   (* Deal with ordinary functions *)
+  List.iter analyze_closure core.body;
   let body = List.map (fun x -> convert_toplevel _start x) core.body |> List.flatten in
 
   (* Deal with main *)

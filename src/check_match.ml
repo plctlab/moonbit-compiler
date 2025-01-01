@@ -240,7 +240,7 @@ let check_match ~(diagnostics : Local_diagnostics.t) (ty : Stype.t)
   (if Vec.length missing_cases > 0 && catch_all_loc = None then
      let empty_match = cases = [] in
      let cases =
-       Vec.iter missing_cases
+       (fun f -> Vec.iter f missing_cases)
        |> Iter.flat_map ~f:(fun db ->
               Patmatch_static_info.synthesize_missing_case_pattern db ~genv
                 ~empty_match ty

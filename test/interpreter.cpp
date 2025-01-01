@@ -109,6 +109,11 @@ int64_t interpret(std::string label) {
     std::string prev;
 
     for (;;) {
+        if (!blocks.contains(label)) {
+            std::cerr << "Unknown label: " << label << std::endl;
+            exit(3);
+        }
+        
         for (auto x : blocks[label]) {
             SAY(x);
             auto args = split(x, " ");

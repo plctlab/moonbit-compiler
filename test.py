@@ -52,17 +52,17 @@ if args.build_index:
 print("Building MoonBit compiler...")
 os.system("dune build -p moonbit-lang")
 
-print("Building SSA interpreter...")
-os.makedirs("test/build", exist_ok=True)
-os.system(f"clang++ -std=c++20 {verbose} test/interpreter.cpp -Wall -g -o test/build/interpreter")
+# WASM does not require an interpreter
+if not args.wasm:
+    print("Building SSA interpreter...")
+    os.makedirs("test/build", exist_ok=True)
+    os.system(f"clang++ -std=c++20 {verbose} test/interpreter.cpp -Wall -g -o test/build/interpreter")
 
 if args.build_only:
     print("Done.")
     exit(0)
-
-if args.wasm:
-    print("WASM target does not support testing. Exit.")
-    exit(0)
+    
+success = True
 
 with DirContext("test"):
     cases = os.listdir("src") if args.test is None else [args.test]
@@ -77,9 +77,14 @@ with DirContext("test"):
         ret = os.system(f"{debug} moonc link-core {bundled}/core.core build/{src}.core -o build/{dest} -pkg-config-path {src}/moon.pkg.json -pkg-sources {core}:{src} -target {target}")
         
         if ret != 0:
-            print("Internal error. Abort test.")
-            continue
-        
+            print("Compiler generated an error. Failed.")
+            success = False
+            continue;
+
+        if args.wasm:
+            print("WASM target does not support testing. Exit.")
+            break;
+                
         # Remove intermediate files that we don't need.
         try_remove(f"build/{src}.core")
         try_remove(f"build/{src}.mi")
@@ -90,3 +95,7 @@ with DirContext("test"):
         
         if diff == 0:
             print("Passed.")
+        else:
+            success = False
+
+exit(0 if success else 1)

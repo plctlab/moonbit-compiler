@@ -2,6 +2,11 @@
 
 module Ident = Basic_core_ident
 
+module Stringset = Set.Make(String)
+
+let (+=) refset mem =
+  refset := Stringset.add mem !refset
+
 type var = {
   name: string;
   ty: Mtype.t;

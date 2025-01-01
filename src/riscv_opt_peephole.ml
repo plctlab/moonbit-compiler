@@ -20,7 +20,7 @@ let const_analysis fn =
 
   let look_for_const name =
     let inst = block_of name in
-    Basic_vec.iter inst.body (fun x -> match x with
+    Basic_vec.iter (fun x -> match x with
     | AssignInt { rd; imm } -> Hashtbl.add consts rd imm
     | Add r -> propagate_r r (+)
     | Sub r -> propagate_r r (-)
@@ -39,7 +39,7 @@ let const_analysis fn =
     | Slli i -> propagate_i i Int.shift_left
     | Srli i -> propagate_i i Int.shift_right
     | Phi { rd; rs } -> ()
-    | _ -> ())
+    | _ -> ()) inst.body
   in
 
   let blocks = get_blocks fn in
@@ -125,16 +125,16 @@ let remove_dead_variable fn =
     let alive = Hashtbl.find liveness block in
 
     (* Variables used inside the block *)
-    let used = ref Varset.empty in
+    let used = ref Stringset.empty in
 
     List.iter (fun x ->
-      reg_iters (fun x -> used := Varset.add x.name !used) x
+      reg_iters (fun x -> used := Stringset.add x.name !used) x
     ) body;
 
-    let preserved = Varset.union !used alive in
+    let preserved = Stringset.union !used alive in
     List.filter (fun x ->
       let preserve = ref true in
-      reg_iterd (fun x -> preserve := Varset.mem x.name preserved) x;
+      reg_iterd (fun x -> preserve := Stringset.mem x.name preserved) x;
 
       (* TODO: refine this, so that calls to pure functions are also eliminated *)
       match x with

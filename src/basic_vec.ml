@@ -67,7 +67,7 @@ let sort d cmp =
 
 let reverse_in_place src = Arr.reverse_range src.arr 0 src.len
 
-let iter d f =
+let iter f d =
   let arr = d.arr in
   for i = 0 to d.len - 1 do
     f arr.!(i)
@@ -172,7 +172,7 @@ let push (d : 'a t) v =
 
 (** Similar to push, but for a whole vector. *)
 let append vec other =
-  iter other (fun x -> push vec x)
+  iter (fun x -> push vec x) other
 
 let insert (d : 'a t) idx elt =
   let enlarge size =

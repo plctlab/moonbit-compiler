@@ -366,22 +366,21 @@ let lift_item (acc : Core.top_item Vec.t) (item : Core.top_item) =
         lift_expr expr ~lift_to_top:(Toplevel { name_hint = "*init*" })
       in
       Vec.push acc (Ctop_expr { expr; is_main; loc_ });
-      Vec.iter subtops (fun subtop -> Vec.push acc (subtop_to_top subtop ~loc_))
+      Vec.iter (fun subtop -> Vec.push acc (subtop_to_top subtop ~loc_)) subtops
   | Ctop_let { binder; expr; is_pub_; loc_ } ->
       let expr, subtops =
         lift_expr expr
           ~lift_to_top:(Toplevel { name_hint = Ident.base_name binder })
       in
       Vec.push acc (Ctop_let { binder; expr; is_pub_; loc_ });
-      Vec.iter subtops (fun subtop -> Vec.push acc (subtop_to_top subtop ~loc_))
+      Vec.iter (fun subtop -> Vec.push acc (subtop_to_top subtop ~loc_)) subtops
   | Ctop_fn { binder; func; subtops = _; ty_params_; is_pub_; loc_ } ->
       if Tvar_env.is_empty ty_params_ then (
         let expr, subtops =
           lift_expr func.body
             ~lift_to_top:(Toplevel { name_hint = Ident.base_name binder })
         in
-        Vec.iter subtops (fun subtop ->
-            Vec.push acc (subtop_to_top subtop ~loc_));
+        Vec.iter (fun subtop -> Vec.push acc (subtop_to_top subtop ~loc_)) subtops;
         Vec.push acc
           (Ctop_fn
              {

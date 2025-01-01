@@ -111,7 +111,7 @@ let topo_sort ~diagnostics (defs : Typedtree.output) : Typedtree.output =
     in
     add_cycle cycle
   in
-  Vec.iter scc (fun c -> if has_cycle c then handle_cycle c);
+  Vec.iter (fun c -> if has_cycle c then handle_cycle c) scc;
   let value_defs =
     Vec.map_into_list scc (fun c ->
         VI.map_into_list c (fun i -> impl_array.(i).impl))

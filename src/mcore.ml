@@ -19,92 +19,48 @@ module Lst = Basic_lst
 module Syntax = Parsing_syntax
 
 type constant = Constant.t
-
-include struct
-  let _ = fun (_ : constant) -> ()
-  let sexp_of_constant = (Constant.sexp_of_t : constant -> S.t)
-  let _ = sexp_of_constant
-end
+let sexp_of_constant = Constant.sexp_of_t
 
 type prim = Primitive.prim
 
-include struct
-  let _ = fun (_ : prim) -> ()
-  let sexp_of_prim = (Primitive.sexp_of_prim : prim -> S.t)
-  let _ = sexp_of_prim
-end
+let sexp_of_prim = Primitive.sexp_of_prim
 
 type constr = Syntax.constructor
 
-include struct
-  let _ = fun (_ : constr) -> ()
-  let sexp_of_constr = (Syntax.sexp_of_constructor : constr -> S.t)
-  let _ = sexp_of_constr
-end
+let sexp_of_constr = Syntax.sexp_of_constructor
+
 
 type constr_tag = Tag.t
 
-include struct
-  let _ = fun (_ : constr_tag) -> ()
-  let sexp_of_constr_tag = (Tag.sexp_of_t : constr_tag -> S.t)
-  let _ = sexp_of_constr_tag
-end
+let sexp_of_constr_tag = Tag.sexp_of_t
 
 type label = Syntax.label
 
-include struct
-  let _ = fun (_ : label) -> ()
-  let sexp_of_label = (Syntax.sexp_of_label : label -> S.t)
-  let _ = sexp_of_label
-end
+let sexp_of_label = Syntax.sexp_of_label
 
 type accessor = Syntax.accessor
 
-include struct
-  let _ = fun (_ : accessor) -> ()
-  let sexp_of_accessor = (Syntax.sexp_of_accessor : accessor -> S.t)
-  let _ = sexp_of_accessor
-end
+let sexp_of_accessor = Syntax.sexp_of_accessor
 
 type location = Rloc.t
 
-include struct
-  let _ = fun (_ : location) -> ()
-  let sexp_of_location = (Rloc.sexp_of_t : location -> S.t)
-  let _ = sexp_of_location
-end
+let sexp_of_location = Rloc.sexp_of_t
 
 type absolute_loc = Loc.t
 
-include struct
-  let _ = fun (_ : absolute_loc) -> ()
-  let sexp_of_absolute_loc = (Loc.sexp_of_t : absolute_loc -> S.t)
-  let _ = sexp_of_absolute_loc
-end
+let sexp_of_absolute_loc = Loc.sexp_of_t
 
 type binder = Ident.t
 
-include struct
-  let _ = fun (_ : binder) -> ()
-  let sexp_of_binder = (Ident.sexp_of_t : binder -> S.t)
-  let _ = sexp_of_binder
-end
+let sexp_of_binder = Ident.sexp_of_t
 
 type var = Ident.t
 
-include struct
-  let _ = fun (_ : var) -> ()
-  let sexp_of_var = (Ident.sexp_of_t : var -> S.t)
-  let _ = sexp_of_var
-end
+let sexp_of_var = Ident.sexp_of_t
 
 type loop_label = Label.t
 
-include struct
-  let _ = fun (_ : loop_label) -> ()
-  let sexp_of_loop_label = (Label.sexp_of_t : loop_label -> S.t)
-  let _ = sexp_of_loop_label
-end
+let sexp_of_loop_label = Label.sexp_of_t
 
 type typ = Mtype.t
 
@@ -128,48 +84,23 @@ type letfn_kind = Core.letfn_kind =
   | Tail_join
   | Nontail_join [@dead "letfn_kind.Nontail_join"]
 
-include struct
-  let _ = fun (_ : letfn_kind) -> ()
-
-  let sexp_of_letfn_kind =
-    (function
-     | Nonrec -> S.Atom "Nonrec"
-     | Rec -> S.Atom "Rec"
-     | Tail_join -> S.Atom "Tail_join"
-     | Nontail_join -> S.Atom "Nontail_join"
-      : letfn_kind -> S.t)
-
-  let _ = sexp_of_letfn_kind
-end
+let sexp_of_letfn_kind = function
+  | Nonrec -> S.Atom "Nonrec"
+  | Rec -> S.Atom "Rec"
+  | Tail_join -> S.Atom "Tail_join"
+  | Nontail_join -> S.Atom "Nontail_join"
 
 type return_kind =
   | Error_result of { is_error : bool; return_ty : typ }
   | Single_value
 
-include struct
-  let _ = fun (_ : return_kind) -> ()
-
-  let sexp_of_return_kind =
-    (function
-     | Error_result { is_error = is_error__002_; return_ty = return_ty__004_ }
-       ->
-         let bnds__001_ = ([] : _ Stdlib.List.t) in
-         let bnds__001_ =
-           let arg__005_ = sexp_of_typ return_ty__004_ in
-           (S.List [ S.Atom "return_ty"; arg__005_ ] :: bnds__001_
-             : _ Stdlib.List.t)
-         in
-         let bnds__001_ =
-           let arg__003_ = Moon_sexp_conv.sexp_of_bool is_error__002_ in
-           (S.List [ S.Atom "is_error"; arg__003_ ] :: bnds__001_
-             : _ Stdlib.List.t)
-         in
-         S.List (S.Atom "Error_result" :: bnds__001_)
-     | Single_value -> S.Atom "Single_value"
-      : return_kind -> S.t)
-
-  let _ = sexp_of_return_kind
-end
+let sexp_of_return_kind = function
+| Error_result { is_error; return_ty } ->
+    let x = [S.List [ S.Atom "return_ty"; sexp_of_typ return_ty ]] in
+    let x = S.List [ S.Atom "is_error"; Moon_sexp_conv.sexp_of_bool is_error ] :: x
+    in S.List (S.Atom "Error_result" :: x)
+  
+| Single_value -> S.Atom "Single_value"
 
 type top_item =
   | Ctop_expr of { expr : expr; loc_ : absolute_loc }
@@ -336,17 +267,6 @@ and fn = { params : param list; body : expr }
 and param = { binder : binder; ty : typ; loc_ : location }
 and apply_kind = Normal of { func_ty : typ } | Join
 and field_def = { label : label; pos : int; is_mut : bool; expr : expr }
-
-include struct
-  let _ = fun (_ : top_item) -> ()
-  let _ = fun (_ : top_fun_decl) -> ()
-  let _ = fun (_ : handle_kind) -> ()
-  let _ = fun (_ : expr) -> ()
-  let _ = fun (_ : fn) -> ()
-  let _ = fun (_ : param) -> ()
-  let _ = fun (_ : apply_kind) -> ()
-  let _ = fun (_ : field_def) -> ()
-end
 
 module Iter = struct
   class virtual ['a] iterbase =
@@ -1195,10 +1115,6 @@ module Iter = struct
 
     [@@@VISITORS.END]
   end
-
-  include struct
-    let _ = fun (_ : _unused) -> ()
-  end
 end
 
 open struct
@@ -1249,8 +1165,6 @@ open struct
       method private visit_object_key : 'a -> Object_util.object_key -> S.t =
         fun _ x -> Object_util.sexp_of_object_key x
     end
-
-  type _unused
 
   include struct
     [@@@ocaml.warning "-4-26-27"]
@@ -2208,10 +2122,6 @@ open struct
     [@@@VISITORS.END]
   end
 
-  include struct
-    let _ = fun (_ : _unused) -> ()
-  end
-
   let predicate field =
     match field with
     | "loc_", _ when not !Basic_config.show_loc -> None
@@ -2664,10 +2574,6 @@ module Map = struct
     end
 
   type _unused
-
-  include struct
-    [@@@ocaml.warning "-4-26-27"]
-    [@@@VISITORS.BEGIN]
 
     class virtual ['self] map =
       object (self : 'self)
@@ -3642,14 +3548,7 @@ module Map = struct
               expr = _visitors_r3;
             }
       end
-
-    [@@@VISITORS.END]
   end
-
-  include struct
-    let _ = fun (_ : _unused) -> ()
-  end
-end
 
 module Map_core = struct
   include struct
@@ -4047,77 +3946,36 @@ type t = {
   object_methods : Object_util.t;
 }
 
-let sexp_of_t ?(use_absolute_loc = false) prog : S.t =
+let sexp_of_t prog : S.t =
   let global_stamps = Hashtbl.create 20 in
   let body =
     S.List
-      (Lst.map prog.body (fun top_item ->
-           let ctx =
-             if use_absolute_loc then
-               let base =
-                 match top_item with
-                 | Ctop_expr { loc_; _ }
-                 | Ctop_let { loc_; _ }
-                 | Ctop_fn { loc_; _ }
-                 | Ctop_stub { loc_; _ } ->
-                     loc_
-               in
-               Use_absolute_loc base
-             else Use_relative_loc
-           in
-           sexp_visitor#visit_top_item ctx top_item
-           |> Basic_compress_stamp.normalize ~global_stamps))
+      (List.map (fun top_item ->
+        sexp_visitor#visit_top_item Use_relative_loc top_item
+        |> Basic_compress_stamp.normalize ~global_stamps)
+      prog.body)
   in
   let types = Mtype.sexp_of_defs prog.types in
   let object_methods = Object_util.sexp_of_t prog.object_methods in
   match prog.main with
   | Some expr ->
-      let sexp_of_expr e =
-        if use_absolute_loc then
-          sexp_visitor#visit_expr (Use_absolute_loc (snd expr)) e
-        else sexp_visitor#visit_expr Use_relative_loc e
-      in
+      let sexp_of_expr e = sexp_visitor#visit_expr Use_relative_loc e in
       let main =
-        if !Basic_config.show_loc then
-          (fun (arg0__006_, arg1__007_) ->
-            let res0__008_ = sexp_of_expr arg0__006_
-            and res1__009_ = sexp_of_absolute_loc arg1__007_ in
-            S.List [ res0__008_; res1__009_ ])
-            expr
-          |> Basic_compress_stamp.normalize ~global_stamps
-        else
-          sexp_of_expr (fst expr)
-          |> Basic_compress_stamp.normalize ~global_stamps
+        (if !Basic_config.show_loc then
+          let (expr, loc) = expr in
+          List [ sexp_of_expr expr; sexp_of_absolute_loc loc ]
+        else sexp_of_expr (fst expr))
+        |> Basic_compress_stamp.normalize ~global_stamps
       in
-      (List
-         (List.cons
-            (List (List.cons (Atom "body" : S.t) ([ body ] : S.t list)) : S.t)
-            (List.cons
-               (List (List.cons (Atom "main" : S.t) ([ main ] : S.t list))
-                 : S.t)
-               (List.cons
-                  (List (List.cons (Atom "types" : S.t) ([ types ] : S.t list))
-                    : S.t)
-                  ([
-                     List
-                       (List.cons
-                          (Atom "object_methods" : S.t)
-                          ([ object_methods ] : S.t list));
-                   ]
-                    : S.t list))))
-        : S.t)
+      S.List [
+        S.List [ S.Atom "body"; body ];
+        S.List [ S.Atom "main"; main ];
+        S.List [ S.Atom "types"; types ];
+        S.List ([ S.Atom "object_methods"; object_methods ]);
+      ]
   | None ->
-      (List
-         (List.cons
-            (List (List.cons (Atom "body" : S.t) ([ body ] : S.t list)) : S.t)
-            (List.cons
-               (List (List.cons (Atom "types" : S.t) ([ types ] : S.t list))
-                 : S.t)
-               ([
-                  List
-                    (List.cons
-                       (Atom "object_methods" : S.t)
-                       ([ object_methods ] : S.t list));
-                ]
-                 : S.t list)))
-        : S.t)
+    S.List [
+      S.List [ S.Atom "body"; body ];
+      S.List [ S.Atom "types"; types ];
+      S.List ([ S.Atom "object_methods"; object_methods ]);
+    ]
