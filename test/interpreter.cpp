@@ -180,8 +180,8 @@ int64_t interpret(std::string label) {
             if (op == "call_indirect") {
                 auto before = regs;
                 
-                // Remember, we store function names in the pointer
-                std::string fn(*(char**) VAL(2));
+                // The pointer is a string of function name
+                std::string fn((char*) VAL(2));
                 SAY("jump to " << fn);
                 for (int i = 0; i < fns[fn].size(); i++) {
                     regs[fns[fn][i]] = VAL(i + 3);
@@ -349,6 +349,12 @@ int main(int argc, char** argv) {
 
             // Store argument list
             fns[fn_name] = split(rest, ", ");
+
+            // Function is also a label
+            // We need to get a string for it
+            char* str = new char[fn_name.size() + 1];
+            strcpy(str, fn_name.c_str());
+            regs[fn_name] = (int64_t) str;
             continue;
         }
 
@@ -384,7 +390,7 @@ int main(int argc, char** argv) {
                     for (int i = 0; i < len; i++) {
                         char* name = new char[elems[i].size() + 1];
                         strcpy(name, elems[i].c_str());
-                        *(int64_t*)(space + i * 8) = (int64_t) name;
+                        *(char**)(space + i * 8) = name;
                     }
                 }
 

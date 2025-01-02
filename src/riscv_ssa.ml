@@ -199,7 +199,7 @@ and t =
 | GlobalVarDecl of var          (* See notes below *)
 | ExtArray of extern_array      (* An array in `.data` section *)
 | CallExtern of call_data       (* Call a C function *)
-| CallIndirect of call_indirect
+| CallIndirect of call_indirect (* Call a function pointer *)
 | Malloc of malloc
 | Return of var
 
