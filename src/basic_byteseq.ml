@@ -61,10 +61,10 @@ let to_string t =
     | Deferred (len, f) -> Vec.push defer (base, len, f)
   in
   fill ~base:0 t;
-  Vec.iter defer (fun (base, len, f) ->
+  Vec.iter (fun (base, len, f) ->
       let encoded = f len in
       assert (String.length encoded <= len);
-      Bytes.blit_string encoded 0 bytes base (String.length encoded));
+      Bytes.blit_string encoded 0 bytes base (String.length encoded)) defer;
   Bytes.unsafe_to_string bytes
 
 module O = struct

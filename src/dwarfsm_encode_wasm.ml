@@ -709,9 +709,10 @@ struct
       funcsec_buf ^^= int_uleb128 (Vec.length ctx.funcs);
       codesec_buf ^^= int_uleb128 (Vec.length ctx.funcs);
       let low_pc = Byteseq.length codesec_buf.contents in
-      Vec.iter ctx.funcs (fun fn ->
+      Vec.iter (fun (fn: func) ->
           funcsec_buf ^^= typeuse fn.type_;
-          codesec_buf ^^= encode_code ~base:(Byteseq.length !codesec_buf) fn);
+          codesec_buf ^^= encode_code ~base:(Byteseq.length !codesec_buf) fn)
+          ctx.funcs;
       let high_pc = Byteseq.length codesec_buf.contents in
       ctx.aux.low_pc <- low_pc;
       ctx.aux.high_pc <- high_pc

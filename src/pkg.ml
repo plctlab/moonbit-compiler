@@ -487,7 +487,7 @@ let load_direct_uses (tbl : pkg_tbl) (values : Typing_info.values)
                                 (Errors.direct_use_ambiguous_method ~name:id
                                    ~type_locs ~pkg ~loc))
                       | Not_exist -> not_found ()))));
-  Basic_vec.iter use_all_mi (fun mi_view ->
+  Basic_vec.iter (fun (mi_view: Pkg_info.mi_view) ->
       Array.iter
         (fun (id, (vd : Value_info.toplevel)) ->
           match Typing_info.find_value values id with
@@ -535,7 +535,7 @@ let load_direct_uses (tbl : pkg_tbl) (values : Typing_info.values)
           Hash_string.add type_alias id alias)
         mi_view.external_traits;
       Hash_string.iter mi_view.external_type_alias (fun (id, alias) ->
-          Hash_string.add type_alias id alias))
+          Hash_string.add type_alias id alias)) use_all_mi
 
 let report_unused ~diagnostics (tbl : pkg_tbl) : unit =
   let is_core pkg =

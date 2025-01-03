@@ -1,17 +1,16 @@
 open Riscv_ssa
 open Mtype
 
-(**
-Some MoonBit IR instructions carry optional compiler primitives in strange places.
-I haven't met a case when those are not `None`, but a check is put here in case.
-*)
-let warn prim = match prim with
-| None -> ()
-| Some _ -> prerr_endline "warning: prim is not null"
+(** Names of all functions. *)
+let fn_names = ref Stringset.empty
 
-module Varset = Set.Make(String)
+let global_vars = ref Stringset.empty
 
-let global_vars = ref Varset.empty
+(** The function/closure we're currently dealing with *)
+let current_function = ref ""
+
+(** The environment (i.e. the pointer passed to the closure) of current closure *)
+let current_env = ref unit
 
 (** Global instructions, i.e. GlobalVarDecl and ExtArray *)
 let global_inst = Basic_vec.empty ()
@@ -30,6 +29,9 @@ let trait_offset = Hashtbl.create 64
 
 (** Indices of arguments that are trait types for each function, along with their types. *)
 let traited_args = Hashtbl.create 64
+
+(** All captured variables for each closure *)
+let captured = Hashtbl.create 64
 
 (** Get offset of the `pos`-th field in the record type called `name`. *)
 let offsetof ty pos = Hashtbl.find offset_table (ty, pos)
@@ -213,13 +215,15 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       (* Temporaries in SSA *)
       let vtb = new_temp T_bytes in
       let fn_addr = new_temp T_bytes in
-      let load = new_temp T_int in
+      let fptr = new_temp T_bytes in
 
+      (* Here fptr = vtb[offset] = *(vtb + offset) *)
       Basic_vec.push ssa (Load { rd = vtb; rs = arg; offset = -pointer_size; byte = pointer_size });
-      Basic_vec.push ssa (AssignInt { rd = load; imm = vtb_offset });
-      Basic_vec.push ssa (Add { rd = fn_addr; rs1 = vtb; rs2 = load });
+      Basic_vec.push ssa (Addi { rd = fn_addr; rs = vtb; imm = vtb_offset });
+      Basic_vec.push ssa (Load { rd = fptr; rs = fn_addr; offset = 0; byte = pointer_size });
+
       (* The whole set of args (including self) is needed. *)
-      Basic_vec.push ssa (CallIndirect { rd; rs = fn_addr; args })
+      Basic_vec.push ssa (CallIndirect { rd; rs = fptr; args })
 
   | Pgetbytesitem ->
       let str = List.nth args 0 in
@@ -352,16 +356,14 @@ let rec do_convert ssa (expr: Mcore.expr) =
   | Cexpr_unit _ ->
       unit
   
-  | Cexpr_var { id; ty; prim; _ } ->
-      warn prim;
-
+  | Cexpr_var { id; ty; _ } ->
       let name = Ident.to_string id in
       let variable = { name; ty } in
 
       (* Global variables are pointers. *)
       (* Mutable variables are also pointers. *)
       let is_pointer = 
-        (Varset.mem name !global_vars) ||
+        (Stringset.mem name !global_vars) ||
         (match id with Pmutable_ident _ -> true | _ -> false)
       in
 
@@ -466,8 +468,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
           Basic_vec.push ssa (Assign { rd; rs }));
       do_convert ssa body
 
-  | Cexpr_apply { func; args; ty; prim; _ } ->
-      warn prim;
+  | Cexpr_apply { func; args; ty; _ } ->
       let rd = new_temp ty in
       let fn = Ident.to_string func in
       let args = List.map (fun expr -> do_convert ssa expr) args in
@@ -503,7 +504,17 @@ let rec do_convert ssa (expr: Mcore.expr) =
       );
       
       Basic_vec.append ssa before;
-      Basic_vec.push ssa (Call { rd; fn; args });
+      (if Stringset.mem fn !fn_names then
+        Basic_vec.push ssa (Call { rd; fn; args })
+      else
+        (* Here `fn` is a closure *)
+        let closure = { name = fn; ty = T_bytes } in
+        let fptr = new_temp T_bytes in
+        Basic_vec.push ssa (Load { rd = fptr; rs = closure; offset = 0; byte = pointer_size });
+
+        (* Closure, along with environment, should be passed as argument *)
+        let args = args @ [closure] in
+        Basic_vec.push ssa (CallIndirect { rd; rs = fptr; args }));
       Basic_vec.append ssa after;
       rd
 
@@ -766,12 +777,83 @@ let rec do_convert ssa (expr: Mcore.expr) =
       ) args offsets;
       rd
 
+  | Cexpr_letfn { name; fn; body = afterwards; _ } ->
+      let name = Ident.to_string name in
+      let free_vars = Hashtbl.find captured name in
+
+      let sizes = List.map (fun v -> sizeof v.ty) free_vars in
+      let offset = Basic_lst.cumsum sizes |> List.map (fun x -> x + pointer_size) in
+      let total = Basic_lst.last offset in
+
+      (* Generate a global function *)
+      let params =
+        List.map (fun (x: Mcore.param) -> { name = Ident.to_string x.binder; ty = x.ty }) fn.params
+      in
+      let body = fn.body in
+      let fn_ssa = Basic_vec.empty () in
+      let fn_env = new_temp T_bytes in    (* This will be added to argument list *)
+
+      (* Load environment *)
+      List.iter2 (fun arg offset ->
+        let size = sizeof arg.ty in
+        Basic_vec.push fn_ssa (Load { rd = arg; rs = fn_env; offset = offset - size; byte = size })
+      ) free_vars offset;
+
+      (* This is a different function from the current one, *)
+      (* so we must protect all global variables before generating body *)
+      let this_fn = !current_function in
+      let this_env = !current_env in
+      let this_lbl = !current_label in
+
+      (* Set the correct values for this new function *)
+      let fn_name = Printf.sprintf "%s_closure_%s" !current_function name in
+      current_function := fn_name;
+      current_env := fn_env;
+      current_label := fn_name;
+
+      (* Generate function body *)
+      let return = do_convert fn_ssa body in
+      Basic_vec.push fn_ssa (Return return);
+
+      (* Put them back *)
+      current_function := this_fn;
+      current_env := this_env;
+      current_label := this_lbl;
+
+      (* Push it into global instructions *)
+      let fn_body = Basic_vec.to_list fn_ssa in
+      let args = params @ [fn_env] in
+      Basic_vec.push global_inst (FnDecl { fn = name; args; body = fn_body });
+
+      (* Make a closure *)
+      (* First 8 bytes are function pointer; other bytes are environment *)
+
+      (* Allocate space *)
+      let closure = new_temp T_bytes in
+      Basic_vec.push ssa (Malloc { rd = closure; size = total });
+
+      (* Store the function pointer *)
+      let fptr = new_temp T_bytes in
+      Basic_vec.push ssa (AssignLabel { rd = fptr; imm = name });
+      Basic_vec.push ssa (Store { rd = fptr; rs = closure; offset = 0; byte = pointer_size });
+
+      (* Store environment variables *)
+      List.iter2 (fun (arg: var) offset ->
+        let size = sizeof arg.ty in
+        if arg.name = !current_function then
+          (* This closure captures myself, so I need to make myself a closure *)
+          (* Fortunately my environment is just my closure *)
+          Basic_vec.push ssa (Store { rd = !current_env; rs = closure; offset = offset - size; byte = size })
+        else
+          Basic_vec.push ssa (Store { rd = arg; rs = closure; offset = offset - size; byte = size })
+      ) free_vars offset;
+
+      (* The closure's done. Go on processing code afterwards. *)
+      Basic_vec.push ssa (Assign { rd = { name; ty = T_bytes }; rs = closure; });
+      do_convert ssa afterwards
+
   | Cexpr_return _ ->
       prerr_endline "return";
-      unit
-
-  | Cexpr_letfn _ ->
-      prerr_endline "letfn";
       unit
 
   | Cexpr_function _ ->
@@ -878,6 +960,66 @@ let convert_expr (expr: Mcore.expr) =
   Basic_vec.push ssa (Return return);
   Basic_vec.map_into_list ssa (fun x -> x)
 
+(** Traverse the whole expression tree. *)
+let rec iter_expr f (expr: Mcore.expr) =
+  f expr;
+  let go = iter_expr f in
+  match expr with
+  | Cexpr_prim { args } -> List.iter go args
+  | Cexpr_let { rhs; body } -> go rhs; go body
+  | Cexpr_letfn { fn; body } -> go fn.body; go body
+  | Cexpr_function { func } -> go func.body
+  | Cexpr_apply { args } -> List.iter go args
+  | Cexpr_object { self } -> go self
+  | Cexpr_letrec { body } -> go body
+  | Cexpr_constr { args } -> List.iter go args
+  | Cexpr_tuple { exprs } -> List.iter go exprs
+  | Cexpr_record_update { record } -> go record
+  | Cexpr_field { record } -> go record
+  | Cexpr_mutate { record; field } -> go record; go field
+  | Cexpr_array { exprs } -> List.iter go exprs
+  | Cexpr_assign { expr } -> go expr
+  | Cexpr_sequence { expr1; expr2 } -> go expr1; go expr2
+  | Cexpr_if { cond; ifso; ifnot } -> go cond; go ifso; Option.iter go ifnot
+  | Cexpr_switch_constr { obj; cases; default } -> go obj; List.iter (fun (a, b, c) -> go c) cases; Option.iter go default
+  | Cexpr_switch_constant { obj; cases; default } -> go obj; List.iter (fun (a, b) -> go b) cases; go default
+  | Cexpr_loop { body; args } -> go body; List.iter go args
+  | Cexpr_break { arg } -> Option.iter go arg
+  | Cexpr_continue { args } -> List.iter go args
+  | Cexpr_handle_error { obj } -> go obj
+  | Cexpr_return { expr } -> go expr
+  | _ -> ()
+
+let analyze_closure (top: Mcore.top_item) =
+
+  (* A list of all closures *)
+  let worklist = Basic_vec.empty () in
+
+  let find_closures (expr: Mcore.expr) =
+    match expr with
+    | Cexpr_letfn { fn; name; } ->
+        Basic_vec.push worklist (fn, name)
+    | _ -> ()
+  in
+
+  (* Store captured variables for each closure in `captured` *)
+  let process ((fn: Mcore.fn), (name: Ident.t)) = 
+    let free_ident = Mcore_util.free_vars ~exclude:(Ident.Set.singleton name) fn in
+    let free_vars =
+      Array.map
+        (fun (ident, ty) -> { name = Ident.to_string ident; ty })
+        (free_ident |> Ident.Map.to_sorted_array)
+    in
+    Hashtbl.add captured (Ident.to_string name) (free_vars |> Array.to_list);
+  in
+
+  match top with
+  | Ctop_fn { func; _ } ->
+      iter_expr find_closures func.body;
+      Basic_vec.iter process worklist
+
+  | _ -> ()
+
 
 let convert_toplevel _start (top: Mcore.top_item) =
   let var_of_param ({ binder; ty; _ } : Mcore.param) =
@@ -888,6 +1030,8 @@ let convert_toplevel _start (top: Mcore.top_item) =
   | Ctop_fn { binder; func; export_info_; _ } ->
       let fn = Ident.to_string binder in
       let args = List.map var_of_param func.params in
+
+      current_function := fn;
       let body = convert_expr func.body in
 
       (* Record the index of arguments that are traits *)
@@ -905,7 +1049,7 @@ let convert_toplevel _start (top: Mcore.top_item) =
 
   | Ctop_let { binder; expr; is_pub_; _ } ->
       let name = Ident.to_string binder in
-      global_vars := Varset.add name !global_vars;
+      global_vars := Stringset.add name !global_vars;
 
       let rd = do_convert _start expr in
       let var = { name = Ident.to_string binder; ty = rd.ty } in
@@ -926,6 +1070,14 @@ let convert_toplevel _start (top: Mcore.top_item) =
   
   | _ -> failwith "TODO: riscv_ssa.ml: don't know this toplevel"
 
+let find_functions (top: Mcore.top_item) =
+  match top with
+  | Ctop_fn { binder; _ }
+  | Ctop_stub { binder; _ } ->
+      fn_names += Ident.to_string binder
+
+  | _ -> ()
+
 let ssa_of_mcore (core: Mcore.t) =
   let out = Printf.sprintf "%s.ir" !Driver_config.Linkcore_Opt.output_file  in
   Basic_io.write_s out (Mcore.sexp_of_t core);
@@ -940,6 +1092,8 @@ let ssa_of_mcore (core: Mcore.t) =
   record_traits core.object_methods;
 
   (* Deal with ordinary functions *)
+  List.iter find_functions core.body;
+  List.iter analyze_closure core.body;
   let body = List.map (fun x -> convert_toplevel _start x) core.body |> List.flatten in
 
   (* Deal with main *)

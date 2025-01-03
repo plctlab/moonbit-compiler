@@ -108,8 +108,8 @@ let module_with_source_map ~file ?source_map_url ?source_loader m =
     | None -> ("moonbit:///@" ^ pkg ^ "/" ^ file, None)
   in
   let last_code_pos = ref None in
-  Vec.iter code_pos
-    (fun ((rel_pc, { pkg; file; line = line1; col = column }) as code_pos) ->
+  Vec.iter
+    (fun ((rel_pc, ({ pkg; file; line = line1; col = column }: Ast.source_pos)) as code_pos) ->
       match !last_code_pos with
       | Some last_code_pos when equal_code_pos code_pos last_code_pos -> ()
       | _ ->
@@ -137,7 +137,7 @@ let module_with_source_map ~file ?source_map_url ?source_loader m =
           mappings_buf ^^= field addr last_addr
           ^^ field file_index last_src_file
           ^^ field line last_src_line
-          ^^ field column last_src_column);
+          ^^ field column last_src_column) code_pos;
   source_map_buf ^^= string ",\"sources\":[" ^^ !sources_buf ^^ string "]";
   source_map_buf
   ^^= string ",\"sourcesContent\":["

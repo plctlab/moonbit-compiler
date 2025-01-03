@@ -253,11 +253,11 @@ let link_core ~(shrink_wasm : bool) ~(elim_unused_let : bool)
     ~(exported_functions : string Basic_hash_string.t) ~(target : target) : unit
     =
   let targets : Core_link.linking_target Basic_vec.t = Basic_vec.empty () in
-  Basic_vec.iter core_inputs (function
+  Basic_vec.iter (function
     | Core_Path path -> Basic_vec.push targets (Core_link.File_path path)
     | Core_Content content ->
         Basic_vec.push targets
-          (Core_link.Core_format (Core_format.of_string content)));
+          (Core_link.Core_format (Core_format.of_string content))) core_inputs;
   let link_output = Core_link.link ~targets in
   let mono_core =
     monofy_core_link ~link_output
