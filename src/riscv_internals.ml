@@ -86,7 +86,7 @@ let unsafe_bytes_sub_string fn =
     CallExtern { rd = dst; fn = "malloc"; args = [ _2 ] };
 
     (* Divide length by 2 *)
-    Srli { rd = _1; rs = length; imm = 1 };
+    Srai { rd = _1; rs = length; imm = 1 };
     Store { rd = _1; rs = dst; offset = 0; byte = 4 };
     
     (* Copy *)

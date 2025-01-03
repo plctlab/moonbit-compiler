@@ -119,8 +119,12 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       | And, [rs1; rs2] -> (And { rd; rs1; rs2 })
       | Or, [rs1; rs2] -> (Or { rd; rs1; rs2 })
       | Xor, [rs1; rs2] -> (And { rd; rs1; rs2 })
-      | Shr, [rs1; rs2] -> (Shr { rd; rs1; rs2 })
-      | Shl, [rs1; rs2] -> (Shl { rd; rs1; rs2 })
+      | Shl, [rs1; rs2] -> (Sll { rd; rs1; rs2 })
+      | Shr, [rs1; rs2] -> 
+          if rs1.ty = T_uint || rs1.ty = T_uint64 then
+            (Srl { rd; rs1; rs2 })
+          else
+            (Sra { rd; rs1; rs2 })
 
       (* For ease of implementation, let's just rely on GCC builtins *)
       | Popcnt, _ -> (CallExtern { rd; fn = "__builtin_popcount"; args })
@@ -141,6 +145,23 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
         | I32, U8 | U32, U8 ->
             (* Discard higher bits by masking them away *)
             Basic_vec.push ssa (Andi { rd; rs = arg; imm = 255 })
+
+        | U64, U32 ->
+            (* Discard higher bits by shifting *)
+            let temp = new_temp T_uint in
+            Basic_vec.push ssa (Slli { rd = temp; rs = arg; imm = 32 });
+            Basic_vec.push ssa (Srli { rd; rs = arg; imm = 32 })
+
+        | I64, I32 | U64, I32 ->
+            (* Discard higher bits by shifting, but arithmetic *)
+            let temp = new_temp T_uint in
+            Basic_vec.push ssa (Slli { rd = temp; rs = arg; imm = 32 });
+            Basic_vec.push ssa (Srai { rd; rs = arg; imm = 32 })
+
+        | U32, I32 | I32, U32 | I32, I64 | U32, U64 ->
+            (* Simply do nothing *)
+            ()
+
         
         | _ -> die())
 
@@ -184,26 +205,87 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
         Basic_vec.push ssa (Load { rd; rs = addr; offset = 0; byte = size });
 
   | Pfixedarray_make { kind } ->
+      let ty =
+        (match rd.ty with
+        | T_fixedarray { elem } -> elem
+        | _ -> failwith "riscv_ssa.ml: bad type in fixedarray_make")
+      in
+      let size = sizeof ty in
+
       (match kind with
       | Uninit ->
           if List.length args != 1 then
             failwith "riscv_ssa.ml: bad call to 'Pfixedarray_make'"
-          else
+          else (
             let len = List.hd args in
-            let ty =
-              (match rd.ty with
-              | T_fixedarray { elem } -> elem
-              | _ -> failwith "riscv_ssa.ml: bad type in fixedarray_make")
-            in
-            let size = sizeof ty in
+            
             let sz = new_temp T_int in
             let length = new_temp T_int in
             (* Same as `rd = malloc(sizeof(T) * len)` *)
             Basic_vec.push ssa (AssignInt { rd = sz; imm = size; });
             Basic_vec.push ssa (Mul { rd = length; rs1 = sz; rs2 = len });
-            Basic_vec.push ssa (CallExtern { rd; fn = "malloc"; args = [length] })
+            Basic_vec.push ssa (CallExtern { rd; fn = "malloc"; args = [length] }))
 
-      (* Haven't observed occurrence of other values of `kind` *)
+      | LenAndInit ->
+          let len = List.nth args 0 in
+          let init = List.nth args 1 in
+
+          let sz = new_temp T_int in
+          let length = new_temp T_int in
+          
+          (* First do a `malloc` *)
+          Basic_vec.push ssa (AssignInt { rd = sz; imm = size; });
+          Basic_vec.push ssa (Mul { rd = length; rs1 = sz; rs2 = len });
+          Basic_vec.push ssa (CallExtern { rd; fn = "malloc"; args = [length] });
+
+          (* Then generate a loop to fill things in:
+            before:
+              li %1 0
+              j loop
+
+            loop:
+              phi i %1 before %2 body
+              le %3 i len
+              br %3 body exit
+
+            body:
+              mul %4 i sz
+              s? init %4 0
+              addi %2 i %1
+              j loop
+
+            exit:
+          *)
+          let _1 = new_temp T_int in
+          let _2 = new_temp T_int in
+          let _3 = new_temp T_bool in
+          let _4 = new_temp T_int in
+          let i = new_temp T_int in
+
+          let before = new_label "before_" in
+          let loop = new_label "loop_" in
+          let body = new_label "body_" in
+          let exit = new_label "exit_" in
+
+          Basic_vec.push ssa (Jump before);
+
+          push_label ssa before;
+          Basic_vec.push ssa (AssignInt { rd = _1; imm = 0 });
+          Basic_vec.push ssa (Jump loop);
+
+          push_label ssa loop;
+          Basic_vec.push ssa (Phi { rd = i; rs = [(_1, before); (_2, body)] });
+          Basic_vec.push ssa (Less { rd = _3; rs1 = i; rs2 = len });
+          Basic_vec.push ssa (Branch { cond = _3; ifso = body; ifnot = exit });
+
+          push_label ssa body;
+          Basic_vec.push ssa (Mul { rd = _4; rs1 = i; rs2 = sz });
+          Basic_vec.push ssa (Store { rd = init; rs = _4; offset = 0; byte = size });
+          Basic_vec.push ssa (Addi { rd = _2; rs = i; imm = 1 });
+          Basic_vec.push ssa (Jump loop);
+
+          push_label ssa exit;
+
       | _ -> failwith "riscv_ssa.ml: unrecognized config of fixed array make")
 
   | Pcall_object_method { method_index; _ } ->

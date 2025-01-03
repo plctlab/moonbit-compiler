@@ -9,12 +9,12 @@ let is_const = Hashtbl.mem consts
 
 let const_analysis fn =
   let propagate_r ({ rd; rs1; rs2 }) op =
-    if is_const rs1 && is_const rs2 then
+    if is_const rs1 && is_const rs2 && rd.ty == T_int then
       Hashtbl.add consts rd (op (value_of rs1) (value_of rs2)) 
   in
 
   let propagate_i ({ rd; rs; imm }) op =
-    if is_const rs then
+    if is_const rs && rd.ty == T_int then
       Hashtbl.add consts rd (op (value_of rs) imm)
   in
 
@@ -29,8 +29,8 @@ let const_analysis fn =
     | And r -> propagate_r r Int.logand
     | Or r -> propagate_r r Int.logor
     | Xor r -> propagate_r r Int.logxor
-    | Shr r -> propagate_r r Int.shift_left
-    | Shl r -> propagate_r r Int.shift_right
+    | Srl r -> propagate_r r Int.shift_left
+    | Sll r -> propagate_r r Int.shift_right
 
     | Addi i -> propagate_i i (+)
     | Andi i -> propagate_i i Int.logand
@@ -99,12 +99,12 @@ let to_itype fn =
           Xori { rd; rs = rs1; imm = value_of rs2 }
         else x
 
-    | Shl { rd; rs1; rs2 } ->
+    | Sll { rd; rs1; rs2 } ->
         if good rs2 then
           Slli { rd; rs = rs1; imm = value_of rs2 }
         else x
     
-    | Shr { rd; rs1; rs2 } ->
+    | Srl { rd; rs1; rs2 } ->
         if good rs2 then
           Srli { rd; rs = rs1; imm = value_of rs2 }
         else x

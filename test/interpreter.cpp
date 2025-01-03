@@ -58,6 +58,10 @@ int int_of(std::string s) {
 #define RTYPE(name, op) std::make_pair(name, [](int64_t x, int64_t y) { return x op y; })
 #define MEM(name, type) std::make_pair(name, [](int64_t x, int offset) { return *((type*) (x + offset)); })
 #define ITYPE(name, op) std::make_pair(name, [](int64_t x, int imm) -> int64_t { return x op imm; })
+#define RTYPEW(name, op) std::make_pair(name, [](int64_t x, int64_t y) { return (int)x op (int)y; })
+#define RTYPEU(name, op) std::make_pair(name, [](int64_t x, int64_t y) { return (uint64_t)x op (uint64_t)y; })
+#define RTYPEUW(name, op) std::make_pair(name, [](int64_t x, int64_t y) { return (unsigned)x op (unsigned)y; })
+#define ITYPEW(name, op) std::make_pair(name, [](int64_t x, int imm) -> int64_t { return (int)x op imm; })
 #define VAL(i) regs[args[i]]
 
 #ifdef VERBOSE
@@ -85,8 +89,31 @@ int64_t interpret(std::string label) {
         RTYPE("and", &),
         RTYPE("or", |),
         RTYPE("xor", ^),
-        RTYPE("shl", <<),
-        RTYPE("shr", >>),
+        RTYPE("sll", <<),
+        RTYPE("sra", >>),
+        RTYPEW("addw", +),
+        RTYPEW("subw", -),
+        RTYPEW("mulw", *),
+        RTYPEW("divw", /),
+        RTYPEW("modw", %),
+        RTYPEW("sllw", <<),
+        RTYPEW("srlw", >>),
+        RTYPEU("addu", +),
+        RTYPEU("subu", -),
+        RTYPEU("mulu", *),
+        RTYPEU("divu", /),
+        RTYPEU("modu", %),
+        RTYPEU("leu", <),
+        RTYPEU("lequ", <=),
+        RTYPEU("geu", >),
+        RTYPEU("gequ", >=),
+        RTYPEU("equ", ==),
+        RTYPEU("neu", !=),
+        RTYPEUW("adduw", +),
+        RTYPEUW("subuw", -),
+        RTYPEUW("muluw", *),
+        RTYPEUW("divuw", /),
+        RTYPEUW("moduw", %),
     };
 
     static std::map<std::string, std::function<int64_t (int64_t, int)>> load = {
@@ -98,12 +125,16 @@ int64_t interpret(std::string label) {
 
     static std::map<std::string, std::function<int64_t (int64_t, int)>> itype = {
         ITYPE("addi", +),
-        ITYPE("srli", >>),
+        ITYPE("srai", >>),
         ITYPE("slli", <<),
         ITYPE("andi", &),
         ITYPE("ori", |),
         ITYPE("xori", ^),
-        ITYPE("slti", <)
+        ITYPE("slti", <),
+        ITYPEW("addiw", +),
+        ITYPEW("sraiw", >>),
+        ITYPEW("slliw", <<),
+        ITYPEW("sltiw", <),
     };
 
     std::string prev;
@@ -136,6 +167,33 @@ int64_t interpret(std::string label) {
                 OUTPUT(args[1], VAL(1));
                 continue;
             }
+
+            // Logical left-shift family
+            if (op == "srli") {
+                VAL(1) = ((uint64_t) VAL(2)) >> int_of(args[3]);
+                OUTPUT(args[1], VAL(1));
+                continue;
+            }
+
+            if (op == "srliw") {
+                VAL(1) = ((unsigned) VAL(2)) >> int_of(args[3]);
+                OUTPUT(args[1], VAL(1));
+                continue;
+            }
+
+            if (op == "srl") {
+                VAL(1) = ((uint64_t) VAL(2)) >> VAL(3);
+                OUTPUT(args[1], VAL(1));
+                continue;
+            }
+            
+            if (op == "srlw") {
+                VAL(1) = ((unsigned) VAL(2)) >> VAL(3);
+                OUTPUT(args[1], VAL(1));
+                continue;
+            }
+
+            // Other operations
 
             if (op == "neg") {
                 VAL(1) = -VAL(2);
