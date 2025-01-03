@@ -138,7 +138,7 @@ type fn = {
 
 (** Instructions available in 3-address code and SSA. *)
 and t =
-(* Arithmetic operations *)
+(* 64-bit Arithmetic operations *)
 | Add of r_type
 | Sub of r_type
 | Mul of r_type
@@ -155,18 +155,20 @@ and t =
 (* Bitwise operations *)
 | And of r_type
 | Or of r_type
-| Shr of r_type
-| Shl of r_type
+| Sll of r_type
+| Srl of r_type
+| Sra of r_type
 | Xor of r_type
 | Not of r2_type
 
-(* I-type operations *)
+(* 64-bit I-type operations *)
 | Addi of i_type
 | Andi of i_type
 | Ori of i_type
 | Xori of i_type
 | Slli of i_type      (* Left shift *)
 | Srli of i_type      (* Right shift (unsigned) *)
+| Srai of i_type      (* Right shift (signed) *)
 | Slti of i_type      (* Set less than *)
 
 (* Floating point operations *)
@@ -225,6 +227,39 @@ let to_string t =
     Printf.sprintf "%s %s %s %d" op rd.name rs.name imm
   in
 
+  (* Deals with signedness: signed or unsigned *)
+  let rtypeu op ({ rd; rs1; rs2 }: r_type) =
+    let width = (match rd.ty with
+    | T_uint | T_uint64 -> "u"
+    | _ -> "") in
+    Printf.sprintf "%s%s %s %s %s" op width rd.name rs1.name rs2.name
+  in
+
+  (* Deals with width: 32 or 64 bit *)
+  let rtypew op ({ rd; rs1; rs2 }: r_type) =
+    let width = (match rd.ty with
+    | T_int | T_uint -> "w"
+    | _ -> "") in
+    Printf.sprintf "%s%s %s %s %s" op width rd.name rs1.name rs2.name
+  in
+
+  (* Deals with both width and signedness *)
+  let rtypeuw op ({ rd; rs1; rs2 }: r_type) =
+    let width = (match rd.ty with
+    | T_int -> "w"
+    | T_uint -> "uw"
+    | T_uint64 -> "u"
+    | _ -> "") in
+    Printf.sprintf "%s%s %s %s %s" op width rd.name rs1.name rs2.name
+  in
+
+  let itypew op ({ rd; rs; imm }: i_type) =
+    let width = (match rd.ty with
+    | T_int | T_uint -> "w"
+    | _ -> "") in
+    Printf.sprintf "%s%s %s %s %d" op width rd.name rs.name imm
+  in
+
   let die x =
     failwith (Printf.sprintf "riscv_ssa.ml: invalid byte count (%d) in load/store" x)
   in
@@ -233,33 +268,37 @@ let to_string t =
   let rec str t depth =
     String.make (depth * 2) ' ' ^
     match t with
-    | Add r -> rtype "add" r
-    | Sub r -> rtype "sub" r
-    | Mul r -> rtype "mul" r
-    | Div r -> rtype "div" r
-    | Mod r -> rtype "mod" r
-    | Less r -> rtype "le" r
-    | Leq r -> rtype "leq" r
-    | Great r -> rtype "ge" r
-    | Geq r -> rtype "geq" r
+    (* Note: add, sub and mul actually aren't affected by `u`; *)
+    (* nevertheless, the `u`s are included for debug purposes *)
+    | Add r -> rtypeuw "add" r
+    | Sub r -> rtypeuw "sub" r
+    | Mul r -> rtypeuw "mul" r
+    | Div r -> rtypeuw "div" r
+    | Mod r -> rtypeuw "mod" r
+    | Less r -> rtypeu "le" r
+    | Leq r -> rtypeu "leq" r
+    | Great r -> rtypeu "ge" r
+    | Geq r -> rtypeu "geq" r
     | Eq r -> rtype "eq" r
     | Neq r -> rtype "ne" r
     | Neg r -> r2type "neg" r
 
     | And r -> rtype "and" r
     | Or r -> rtype "or" r
-    | Shr r -> rtype "shr" r
-    | Shl r -> rtype "shl" r
+    | Sll r -> rtypew "sll" r
+    | Srl r -> rtypew "srl" r
+    | Sra r -> rtypew "sra" r
     | Xor r -> rtype "xor" r
     | Not r -> r2type "not" r
 
-    | Addi i -> itype "addi" i
+    | Addi i -> itypew "addi" i
     | Andi i -> itype "andi" i
     | Ori i -> itype "ori" i
     | Xori i -> itype "xori" i
-    | Slli i -> itype "slli" i
-    | Srli i -> itype "srli" i
-    | Slti i -> itype "slti" i
+    | Slli i -> itypew "slli" i
+    | Srli i -> itypew "srli" i
+    | Srai i -> itypew "srai" i
+    | Slti i -> itypew "slti" i
 
     | FAdd r -> rtype "fadd" r
     | FSub r -> rtype "fsub" r
@@ -368,8 +407,9 @@ let rec reg_map fd fs t = match t with
 | Neg { rd; rs1 } -> Neg { rd = fd rd; rs1 = fs rs1 }
 | And { rd; rs1; rs2; } -> And { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
 | Or { rd; rs1; rs2; } -> Or { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
-| Shr { rd; rs1; rs2; } -> Shr { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
-| Shl { rd; rs1; rs2; } -> Shl { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Srl { rd; rs1; rs2; } -> Srl { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Sll { rd; rs1; rs2; } -> Sll { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
+| Sra { rd; rs1; rs2; } -> Sra { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
 | Xor { rd; rs1; rs2; } -> Xor { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
 | Not { rd; rs1 } -> Not { rd = fd rd; rs1 = fs rs1 }
 | Addi { rd; rs; imm } -> Addi { rd = fd rd; rs = fs rs; imm }
@@ -378,6 +418,7 @@ let rec reg_map fd fs t = match t with
 | Xori { rd; rs; imm } -> Xori { rd = fd rd; rs = fs rs; imm }
 | Slli { rd; rs; imm } -> Slli { rd = fd rd; rs = fs rs; imm }
 | Srli { rd; rs; imm } -> Srli { rd = fd rd; rs = fs rs; imm }
+| Srai { rd; rs; imm } -> Srai { rd = fd rd; rs = fs rs; imm }
 | Slti { rd; rs; imm } -> Slti { rd = fd rd; rs = fs rs; imm }
 | FAdd { rd; rs1; rs2; } -> FAdd { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
 | FSub { rd; rs1; rs2; } -> FSub { rd = fd rd; rs1 = fs rs1; rs2 = fs rs2 }
