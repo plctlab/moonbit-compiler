@@ -26,8 +26,14 @@ let basic_blocks = Hashtbl.create 1024
 (** The exit block(s) for each function `fn`, i.e. whose final instruction is `return`. *)
 let exit_fn = Hashtbl.create 256
 
+(** The parameters of each function. *)
+let (params: (string, var list) Hashtbl.t) = Hashtbl.create 256
+
 (** Get the basic block with label `name`. *)
 let block_of name = Hashtbl.find basic_blocks name
+
+(** Get the body of a basic block. *)
+let body_of name = (block_of name).body |> Basic_vec.to_list
 
 (**
 Builds control flow graph.
@@ -219,7 +225,7 @@ let liveness_analysis fn =
     Hashtbl.add phiuses name !phiuse
   ) blocks;
 
-  (* Keep doing until reaches fixed point *)
+  (* Keep doing until fixed point is reached *)
   let rec iterate worklist =
     let last_item = Basic_vec.pop_opt worklist in
     match last_item with

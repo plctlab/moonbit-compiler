@@ -1,10 +1,14 @@
 (** Gathers all optimizations. *)
 open Riscv_opt
+open Riscv_ssa
 
 let opt ssa =
+  List.iter (fun top -> match top with
+  | FnDecl { fn; args } -> Hashtbl.add params fn args
+  | _ -> ()) ssa;
   iter_fn2 build_cfg ssa;
   
-  (* Peephole *)
+  Riscv_opt_inline.inline ssa;
   Riscv_opt_peephole.peephole ssa;
 
   let s = map_fn ssa_of_cfg ssa in

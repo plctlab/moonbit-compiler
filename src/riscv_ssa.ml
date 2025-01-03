@@ -399,7 +399,7 @@ let rec reg_map fd fs t = match t with
 | AssignLabel { rd; imm } -> AssignLabel { rd = fd rd; imm; }
 | Assign { rd; rs } -> Assign { rd = fd rd; rs = fs rs }
 | Load { rd; rs; offset; byte } -> Load { rd = fd rd; rs = fs rs; offset; byte }
-| Store { rd; rs; offset; byte } -> Load { rd = fs rd; rs = fs rs; offset; byte }
+| Store { rd; rs; offset; byte } -> Store { rd = fs rd; rs = fs rs; offset; byte }
 | Jump label -> Jump label
 | Branch { cond; ifso; ifnot } -> Branch { cond = fs cond; ifso; ifnot }
 | Label label -> Label label

@@ -908,7 +908,6 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
           (* Let the pointer point to beginning of data, rather than the length section *)
           let beginning = new_temp T_bytes in
-          Basic_vec.push ssa (ExtArray { label; values });
           Basic_vec.push ssa (AssignLabel { rd = beginning; imm = label; });
           Basic_vec.push ssa (Addi { rd; rs = beginning; imm = 4 })
 
@@ -923,7 +922,6 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
           (* Let the pointer point to beginning of data, rather than the length section *)
           let beginning = new_temp T_bytes in
-          Basic_vec.push ssa (ExtArray { label; values });
           Basic_vec.push ssa (AssignLabel { rd = beginning; imm = label; });
           Basic_vec.push ssa (Addi { rd; rs = beginning; imm = 4 })
   

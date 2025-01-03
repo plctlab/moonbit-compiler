@@ -64,7 +64,7 @@ let to_itype fn =
   let blocks = get_blocks fn in
 
   let convert block = 
-    let body = (block_of block).body |> Basic_vec.to_list in
+    let body = body_of block in
     List.map (fun x -> match x with
     | Add { rd; rs1; rs2 } ->
         if good rs1 then
@@ -119,7 +119,7 @@ let remove_dead_variable fn =
   let liveness = liveness_analysis fn in
 
   let remove block = 
-    let body = (block_of block).body |> Basic_vec.to_list in
+    let body = body_of block in
 
     (* Variables alive at the end of block *)
     let alive = Hashtbl.find liveness block in
