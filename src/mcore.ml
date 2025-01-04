@@ -3946,6 +3946,8 @@ type t = {
   object_methods : Object_util.t;
 }
 
+let sexp_of_expr e = sexp_visitor#visit_expr Use_relative_loc e
+
 let sexp_of_t prog : S.t =
   let global_stamps = Hashtbl.create 20 in
   let body =
@@ -3959,7 +3961,6 @@ let sexp_of_t prog : S.t =
   let object_methods = Object_util.sexp_of_t prog.object_methods in
   match prog.main with
   | Some expr ->
-      let sexp_of_expr e = sexp_visitor#visit_expr Use_relative_loc e in
       let main =
         (if !Basic_config.show_loc then
           let (expr, loc) = expr in

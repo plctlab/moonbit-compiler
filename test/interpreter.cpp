@@ -200,6 +200,11 @@ int64_t interpret(std::string label) {
                 continue;
             }
 
+            if (op == "not") {
+                VAL(1) = ~VAL(2);
+                continue;
+            }
+
             if (op == "sd" || op == "sb" || op == "sw" || op == "sh") {
                 auto rd = VAL(1);
                 auto rs = VAL(2);
@@ -335,9 +340,12 @@ int64_t interpret(std::string label) {
             }
 
             if (op == "li") {
-                auto rs1 = int_of(args[2]);
+                // This can be larger than the size of int
+                std::stringstream ss(args[2]);
+                int64_t rs;
+                ss >> rs;
 
-                VAL(1) = rs1;
+                VAL(1) = rs;
                 OUTPUT(args[1], VAL(1));
                 continue;
             }
@@ -460,9 +468,13 @@ int main(int argc, char** argv) {
                 continue;
             }
 
+            // Remove "global "
+            std::stringstream ss(str.substr(7));
+
             // This is simply a global variable
-            std::cerr << "Bad SSA: no global vars yet\n";
-            return 2;
+            std::string name; int size;
+            ss >> name >> size;
+            regs[name] = (int64_t) new char[size];
         }
         
         // A new label is met. Refresh `label` and `inst`.

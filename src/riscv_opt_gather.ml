@@ -8,8 +8,10 @@ let opt ssa =
   | _ -> ()) ssa;
   iter_fn2 build_cfg ssa;
   
-  Riscv_opt_inline.inline ssa;
-  Riscv_opt_peephole.peephole ssa;
+  for i = 1 to 3 do
+    Riscv_opt_inline.inline ssa;
+    Riscv_opt_peephole.peephole ssa;
+  done;
 
   let s = map_fn ssa_of_cfg ssa in
   let out = Printf.sprintf "%s.ssa" !Driver_config.Linkcore_Opt.output_file in
