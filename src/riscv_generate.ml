@@ -40,7 +40,6 @@ let is_trait ty = match ty with
 | T_trait _ -> true
 | _ -> false
 
-let pointer_size = 8
 
 (** Label of current basic block. Used in phi-function generation. *)
 let current_label = ref ""
@@ -50,26 +49,6 @@ let push_label ssa label =
   Basic_vec.push ssa (Label label)
 
 let remove_space = String.map (fun c -> if c = ' ' then '_' else c)
-
-(* This is the size of their representations, not the actual size. *)
-let rec sizeof ty = match ty with
-| T_bool -> 1
-| T_byte -> 1
-| T_bytes -> pointer_size
-| T_char -> 2
-| T_double -> 8
-| T_float -> 4
-| T_func _ -> pointer_size
-| T_int -> 4
-| T_int64 -> 8
-| T_string -> pointer_size
-| T_uint -> 4
-| T_uint64 -> 8
-| T_unit -> 0
-| T_tuple _ -> pointer_size
-| T_constr id -> pointer_size
-| T_fixedarray _ -> pointer_size
-| _ -> failwith "riscv_ssa.ml: cannot calculate size"
 
 (** Push the correct sequence of instruction based on primitives. *)
 let deal_with_prim ssa rd (prim: Primitive.prim) args =
@@ -160,7 +139,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
 
         | U32, I32 | I32, U32 | I32, I64 | U32, U64 ->
             (* Simply do nothing *)
-            ()
+            Basic_vec.push ssa (Assign { rd; rs = arg });
 
         
         | _ -> die())
@@ -204,39 +183,69 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
         Basic_vec.push ssa (Add { rd = addr; rs1 = arr; rs2 = offset });
         Basic_vec.push ssa (Load { rd; rs = addr; offset = 0; byte = size });
 
-  | Pfixedarray_make { kind } ->
-      let ty =
-        (match rd.ty with
-        | T_fixedarray { elem } -> elem
-        | _ -> failwith "riscv_ssa.ml: bad type in fixedarray_make")
-      in
-      let size = sizeof ty in
+  | Pfixedarray_set_item _ ->
+      let arr = List.nth args 0 in
+      let index = List.nth args 1 in
+      let value = List.nth args 2 in
+      let size = sizeof value.ty in
 
+      (* Temporary variables *)
+      let addr = new_temp T_bytes in
+      let sz = new_temp T_int in
+      let offset = new_temp T_int in
+      Basic_vec.push ssa (AssignInt { rd = sz; imm = size });
+      Basic_vec.push ssa (Mul { rd = offset; rs1 = sz; rs2 = index });
+      Basic_vec.push ssa (Add { rd = addr; rs1 = arr; rs2 = offset });
+      Basic_vec.push ssa (Store { rd = value; rs = addr; offset = 0; byte = size });
+      Basic_vec.push ssa (Assign { rd; rs = unit })
+
+  | Pfixedarray_make { kind } ->
       (match kind with
       | Uninit ->
-          if List.length args != 1 then
-            failwith "riscv_ssa.ml: bad call to 'Pfixedarray_make'"
-          else (
-            let len = List.hd args in
-            
-            let sz = new_temp T_int in
-            let length = new_temp T_int in
-            (* Same as `rd = malloc(sizeof(T) * len)` *)
-            Basic_vec.push ssa (AssignInt { rd = sz; imm = size; });
-            Basic_vec.push ssa (Mul { rd = length; rs1 = sz; rs2 = len });
-            Basic_vec.push ssa (CallExtern { rd; fn = "malloc"; args = [length] }))
+          let len = List.hd args in
+          let ty =
+            (match rd.ty with
+            | T_fixedarray { elem } -> elem
+            | _ -> failwith "riscv_ssa.ml: bad type in fixedarray_make")
+          in
+          let size = sizeof ty in
+          
+          let sz = new_temp T_int in
+          let datlen = new_temp T_int in
+          let total = new_temp T_int in
+          let space = new_temp T_bytes in
+
+          (* Malloc 4 extra bytes aprat from the data part *)
+          Basic_vec.push ssa (AssignInt { rd = sz; imm = size; });
+          Basic_vec.push ssa (Mul { rd = datlen; rs1 = sz; rs2 = len });
+          Basic_vec.push ssa (Addi { rd = total; rs = datlen; imm = 4 });
+          Basic_vec.push ssa (CallExtern { rd = space; fn = "malloc"; args = [total] });
+
+          (* Store the length *)
+          Basic_vec.push ssa (Store { rd = len; rs = space; offset = 0; byte = 4 });
+          Basic_vec.push ssa (Addi { rd; rs = space; imm = 4 })
+
 
       | LenAndInit ->
           let len = List.nth args 0 in
           let init = List.nth args 1 in
+          let size = sizeof init.ty in
 
           let sz = new_temp T_int in
-          let length = new_temp T_int in
+          let datlen = new_temp T_int in
+          let total = new_temp T_int in
+          let space = new_temp T_bytes in
           
-          (* First do a `malloc` *)
+          (* First do a `malloc` same as the previous branch *)
+          (* Malloc 4 extra bytes aprat from the data part *)
           Basic_vec.push ssa (AssignInt { rd = sz; imm = size; });
-          Basic_vec.push ssa (Mul { rd = length; rs1 = sz; rs2 = len });
-          Basic_vec.push ssa (CallExtern { rd; fn = "malloc"; args = [length] });
+          Basic_vec.push ssa (Mul { rd = datlen; rs1 = sz; rs2 = len });
+          Basic_vec.push ssa (Addi { rd = total; rs = datlen; imm = 4 });
+          Basic_vec.push ssa (CallExtern { rd = space; fn = "malloc"; args = [total] });
+
+          (* Store the length *)
+          Basic_vec.push ssa (Store { rd = len; rs = space; offset = 0; byte = 4 });
+          Basic_vec.push ssa (Addi { rd; rs = space; imm = 4 });
 
           (* Then generate a loop to fill things in:
             before:
@@ -250,7 +259,8 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
 
             body:
               mul %4 i sz
-              s? init %4 0
+              add %5 rd %4
+              s? init %5 0
               addi %2 i %1
               j loop
 
@@ -260,6 +270,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
           let _2 = new_temp T_int in
           let _3 = new_temp T_bool in
           let _4 = new_temp T_int in
+          let _5 = new_temp T_bytes in
           let i = new_temp T_int in
 
           let before = new_label "before_" in
@@ -280,7 +291,8 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
 
           push_label ssa body;
           Basic_vec.push ssa (Mul { rd = _4; rs1 = i; rs2 = sz });
-          Basic_vec.push ssa (Store { rd = init; rs = _4; offset = 0; byte = size });
+          Basic_vec.push ssa (Add { rd = _5; rs1 = rd; rs2 = _4 });
+          Basic_vec.push ssa (Store { rd = init; rs = _5; offset = 0; byte = size });
           Basic_vec.push ssa (Addi { rd = _2; rs = i; imm = 1 });
           Basic_vec.push ssa (Jump loop);
 
@@ -339,7 +351,8 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
 
   (* Length are both stored at the same place for these arrays. *)
   | Pstringlength
-  | Pbyteslength ->
+  | Pbyteslength
+  | Pfixedarray_length ->
       let bytes = List.hd args in
       Basic_vec.push ssa (Load { rd; rs = bytes; offset = -4; byte = 4 })
 
@@ -855,7 +868,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
       let sizes = List.map (fun x -> sizeof x.ty) args |> Basic_lst.take (List.length args - 1) in
       let offsets = 0 :: Basic_lst.cumsum sizes in
       List.iter2 (fun arg offset ->
-        Basic_vec.push ssa (Store { rd = arg; rs = rd; offset; byte = sizeof ty })
+        Basic_vec.push ssa (Store { rd = arg; rs = rd; offset; byte = sizeof arg.ty })
       ) args offsets;
       rd
 
@@ -865,7 +878,8 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
       let sizes = List.map (fun v -> sizeof v.ty) free_vars in
       let offset = Basic_lst.cumsum sizes |> List.map (fun x -> x + pointer_size) in
-      let total = Basic_lst.last offset in
+      (* It is possible that this function does not capture anything *)
+      let total = if List.length offset = 0 then pointer_size else Basic_lst.last offset in
 
       (* Generate a global function *)
       let params =
@@ -934,13 +948,15 @@ let rec do_convert ssa (expr: Mcore.expr) =
       Basic_vec.push ssa (Assign { rd = { name; ty = T_bytes }; rs = closure; });
       do_convert ssa afterwards
 
-  | Cexpr_return _ ->
-      prerr_endline "return";
-      unit
+  | Cexpr_return { expr; return_kind } ->
+      (match return_kind with
+      | Error_result { is_error; return_ty } ->
+          failwith "TODO: riscv_generate.ml: return error"
 
-  | Cexpr_function _ ->
-      prerr_endline "function";
-      unit
+      | Single_value ->
+          let return = do_convert ssa expr in
+          Basic_vec.push ssa (Return return);
+          unit)
 
   | Cexpr_constr _ ->
       prerr_endline "constr";
@@ -966,9 +982,31 @@ let rec do_convert ssa (expr: Mcore.expr) =
       prerr_endline "handle error";
       unit
 
-  | Cexpr_array _ ->
-      prerr_endline "array";
-      unit
+  | Cexpr_array { exprs; ty } ->
+      let elem_ty = 
+        (match ty with
+        | T_fixedarray { elem } -> elem
+        | _ -> failwith "riscv_generate.ml: bad array type in Cexpr_array")
+      in
+      let elem_sz = sizeof elem_ty in
+
+      let rd = new_temp T_bytes in
+      let space = new_temp T_bytes in
+      (* Make a space with 4 extra bytes *)
+      Basic_vec.push ssa (Malloc { rd = space; size = elem_sz * (List.length exprs) + 4 });
+
+      (* Store the length and advance to the data part *)
+      let _1 = new_temp T_int in
+      Basic_vec.push ssa (AssignInt { rd = _1; imm = List.length exprs });
+      Basic_vec.push ssa (Store { rd = _1; rs = space; offset = 0; byte = 4 });
+      Basic_vec.push ssa (Addi { rd; rs = space; imm = 4 });
+
+      (* Store each value in the correct position *)
+      List.iteri (fun i x ->
+        let return = do_convert ssa x in
+        Basic_vec.push ssa (Store { rd = return; rs = rd; offset = i * elem_sz; byte = elem_sz })
+      ) exprs;
+      rd
 
   | Cexpr_const { c; ty; _ } ->
       let rd = new_temp ty in
@@ -1023,6 +1061,9 @@ let rec do_convert ssa (expr: Mcore.expr) =
       );
       rd
 
+  | Cexpr_function _ ->
+      failwith "riscv_generate.ml: Cexpr_function should have been converted into letfn"
+
 let generate_vtables () =
   Hashtbl.iter (fun ty methods ->
     let label_raw = Printf.sprintf "vtable_%s" (to_string ty) in
@@ -1069,6 +1110,106 @@ let rec iter_expr f (expr: Mcore.expr) =
   | Cexpr_handle_error { obj } -> go obj
   | Cexpr_return { expr } -> go expr
   | _ -> ()
+
+let rec map_expr f (expr: Mcore.expr) =
+  let go = map_expr f in
+  (match expr with
+  | Cexpr_prim ({ args } as x) ->
+      Mcore.Cexpr_prim { x with args = List.map go args }
+
+  | Cexpr_let ({ rhs; body } as x) ->
+      Mcore.Cexpr_let { x with rhs = go rhs; body = go body }
+
+  | Cexpr_letfn ({ fn; body } as x) ->
+      Mcore.Cexpr_letfn { x with fn = { fn with body = go fn.body }; body = go body }
+
+  | Cexpr_function ({ func } as x) ->
+      Mcore.Cexpr_function { x with func = { func with body = go func.body } }
+
+  | Cexpr_apply ({ args } as x) ->
+      Mcore.Cexpr_apply { x with args = List.map go args }
+    
+  | Cexpr_object ({ self } as x) ->
+      Mcore.Cexpr_object { x with self = go self }
+
+  | Cexpr_letrec ({ body } as x) ->
+      Mcore.Cexpr_letrec { x with body = go body }
+
+  | Cexpr_constr ({ args } as x) ->
+      Mcore.Cexpr_constr { x with args = List.map go args }
+
+  | Cexpr_tuple ({ exprs } as x) ->
+      Mcore.Cexpr_tuple { x with exprs = List.map go exprs }
+
+  | Cexpr_record_update ({ record } as x) ->
+      Mcore.Cexpr_record_update { x with record = go record }
+
+  | Cexpr_field ({ record } as x) ->
+      Mcore.Cexpr_field { x with record = go record }
+
+  | Cexpr_mutate ({ record; field } as x) ->
+      Mcore.Cexpr_mutate { x with record = go record; field = go field }
+
+  | Cexpr_array ({ exprs } as x) ->
+      Mcore.Cexpr_array { x with exprs = List.map go exprs }
+
+  | Cexpr_assign ({ expr } as x) ->
+      Mcore.Cexpr_assign { x with expr = go expr }
+
+  | Cexpr_sequence ({ expr1; expr2 } as x) ->
+      Mcore.Cexpr_sequence { x with expr1 = go expr1; expr2 = go expr2 }
+
+  | Cexpr_if ({ cond; ifso; ifnot } as x) ->
+      Mcore.Cexpr_if { x with cond = go cond; ifso = go ifso; ifnot = Option.map go ifnot }
+
+  | Cexpr_switch_constr ({ obj; cases; default } as x) ->
+      Mcore.Cexpr_switch_constr {
+        x with obj = go obj;
+        cases = List.map (fun (a, b, c) -> (a, b, go c)) cases;
+        default = Option.map go default
+      }
+
+  | Cexpr_switch_constant ({ obj; cases; default } as x) ->
+      Mcore.Cexpr_switch_constant {
+        x with obj = go obj;
+        cases = List.map (fun (a, b) -> (a, go b)) cases;
+        default = go default
+      }
+
+  | Cexpr_loop ({ body; args } as x) ->
+      Mcore.Cexpr_loop { x with body = go body; args = List.map go args }
+
+  | Cexpr_break ({ arg } as x) ->
+      Mcore.Cexpr_break { x with arg = Option.map go arg }
+
+  | Cexpr_continue ({ args } as x) -> 
+      Mcore.Cexpr_continue { x with args = List.map go args }
+
+  | Cexpr_handle_error ({ obj } as x) ->
+      Mcore.Cexpr_handle_error { x with obj = go obj }
+
+  | Cexpr_return ({ expr } as x) ->
+      Mcore.Cexpr_return { x with expr = go expr }
+
+  | w -> w) |> f
+
+(* Converts anonymous functions into named functions, i.e. `letfn` *)
+let convert_lambda (expr: Mcore.expr) =
+  match expr with
+  | Cexpr_function { func; ty; loc_ } ->
+      let lambda = Printf.sprintf "lambda_%d" !slot in
+      let ident = Core.Ident.Pident { name = lambda; stamp = !slot } in
+      slot := !slot + 1;
+      Mcore.Cexpr_letfn {
+        name = ident;
+        kind = Mcore.Rec;
+        fn = func;
+        body = Mcore.Cexpr_var { id = ident; prim = None; ty; loc_ };
+        ty; loc_
+      }
+
+  | w -> w
+
 
 let analyze_closure (top: Mcore.top_item) =
 
@@ -1134,7 +1275,7 @@ let convert_toplevel _start (top: Mcore.top_item) =
       let rd = do_convert _start expr in
       let var = { name = Ident.to_string binder; ty = rd.ty } in
 
-      Basic_vec.push global_inst (Store { rd; rs = var; offset = 0; byte = sizeof rd.ty });
+      Basic_vec.push _start (Store { rd; rs = var; offset = 0; byte = sizeof rd.ty });
       [ GlobalVarDecl var ]
 
   (* Stubs are references to internal functions. *)
@@ -1172,9 +1313,18 @@ let ssa_of_mcore (core: Mcore.t) =
   record_traits core.object_methods;
 
   (* Deal with ordinary functions *)
-  List.iter find_functions core.body;
-  List.iter analyze_closure core.body;
-  let body = List.map (fun x -> convert_toplevel _start x) core.body |> List.flatten in
+  (* First rewrite lambdas into named closures *)
+  let dislambda (top: Mcore.top_item) =
+    match top with
+    | Ctop_fn ({ func } as x) ->
+        Mcore.Ctop_fn { x with func = { func with body = map_expr convert_lambda func.body } }
+    | w -> w
+  in
+
+  let bodies = List.map dislambda core.body in
+  List.iter find_functions bodies;
+  List.iter analyze_closure bodies;
+  let body = List.map (fun x -> convert_toplevel _start x) bodies |> List.flatten in
 
   (* Deal with main *)
   let with_main = match core.main with

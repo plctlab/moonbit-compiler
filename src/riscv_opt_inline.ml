@@ -4,6 +4,7 @@ Inlines a function.
 Current inline condition:
   1. The function has only one basic block;
   2. The function is a leaf (i.e. not calling other functions)
+  3. The function contains no more than 16 instructions
 *)
 
 open Riscv_ssa
@@ -38,7 +39,7 @@ let can_inline fn =
   if Hashtbl.mem inline_cache fn then
     Hashtbl.find inline_cache fn
   else
-    let inlineable = is_leaf fn && is_single fn in
+    let inlineable = is_leaf fn && is_single fn && (List.length (body_of fn) <= 16) in
     Hashtbl.add inline_cache fn inlineable;
     inlineable
 
@@ -58,15 +59,21 @@ let do_inline fn =
           let fn_body = body_of fn in
           
           (* Record the correspondence between arguments and parameters *)
-          let subst = Hashtbl.create 16 in
+          let subst = Hashtbl.create 32 in
           List.iter2 (fun arg param ->
-            Hashtbl.add subst param arg
+            Hashtbl.add subst param.name arg
           ) args (Hashtbl.find params fn);
 
           (* Begin substitution *)
           let replace var =
-            if Hashtbl.mem subst var then Hashtbl.find subst var
-            else var
+            if Hashtbl.mem subst var.name then Hashtbl.find subst var.name
+            else (
+              (* Construct a new correspondence, *)
+              (* in order to fix the case where the same function is inlined twice *)
+              let tmp = new_temp var.ty in
+              Hashtbl.add subst var.name tmp;
+              tmp
+            )
           in
           let fn_new = List.map (fun x -> reg_map replace replace x) fn_body in
 

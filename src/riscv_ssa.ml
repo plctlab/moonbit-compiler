@@ -208,9 +208,32 @@ and t =
 (* Note: *)
 (* GlobalVarDecl is only a declaration. *)
 (* We will insert a function `_start` to initialize them. *)
-(* Global vars should be traited as a label (an address). *)
+(* Global vars should be treated as a label (an address). *)
 (* We compile accesses to them in load/store in this stage, *)
 (* So no special treatment needed in RISC-V generation stage. *)
+
+
+let pointer_size = 8
+
+(* This is the size of their representations, not the actual size. *)
+let sizeof ty = match ty with
+| Mtype.T_bool -> 1
+| Mtype.T_byte -> 1
+| Mtype.T_bytes -> pointer_size
+| Mtype.T_char -> 2
+| Mtype.T_double -> 8
+| Mtype.T_float -> 4
+| Mtype.T_func _ -> pointer_size
+| Mtype.T_int -> 4
+| Mtype.T_int64 -> 8
+| Mtype.T_string -> pointer_size
+| Mtype.T_uint -> 4
+| Mtype.T_uint64 -> 8
+| Mtype.T_unit -> 0
+| Mtype.T_tuple _ -> pointer_size
+| Mtype.T_constr id -> pointer_size
+| Mtype.T_fixedarray _ -> pointer_size
+| _ -> failwith "riscv_ssa.ml: cannot calculate size"
 
 
 (** Emits SSA form. We choose a less human-readable form to facilitate verifier. *)
@@ -381,7 +404,7 @@ let to_string t =
         Printf.sprintf "fn %s (%s) {\n%s\n}\n" fn args_str body_str
 
     | GlobalVarDecl var ->
-        Printf.sprintf "global %s: %s\n" var.name (Mtype.to_string var.ty)
+        Printf.sprintf "global %s %d\n" var.name (sizeof var.ty)
 
     | ExtArray { label; values } ->
         Printf.sprintf "global array %s:\n  %s\n" label (String.concat ", " values)

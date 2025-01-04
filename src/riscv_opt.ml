@@ -206,11 +206,7 @@ let liveness_analysis fn =
       match inst with
       | Phi { rd; rs } ->
           phidef += rd.name;
-          List.iter (fun (v, _) ->
-            (* Must type-annotate to make OCaml accept this *)
-            let v: Riscv_ssa.var = v in
-            phiuse += v.name
-          ) rs
+          List.iter (fun (v, _) -> phiuse += v.name) rs
 
       | _ ->
         Riscv_ssa.reg_iter
@@ -259,7 +255,8 @@ let liveness_analysis fn =
         ) blocks;
         iterate worklist
   in
-  iterate (Hashtbl.find exit_fn fn);
+  (* Must clone a vector, otherwise `exit_fn` will become empty *)
+  iterate (Hashtbl.find exit_fn fn |> Basic_vec.to_list |> Basic_vec.of_list);
   
   live_out
 
