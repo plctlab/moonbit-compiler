@@ -20,6 +20,7 @@ std::map<std::string, std::vector<std::string>> fns;
 // Values of registers used when interpreting.
 // TODO: currently no FP supported.
 std::map<std::string, int64_t> regs;
+std::map<std::string, int64_t> labels;
 
 std::vector<std::string> split(std::string s, std::string delim) {
     size_t start = 0, end;
@@ -193,6 +194,19 @@ int64_t interpret(std::string label) {
                 continue;
             }
 
+            // Less than family, for unsigned values
+            if (op == "sltiu") {
+                VAL(1) = ((uint64_t) VAL(2)) < int_of(args[3]);
+                OUTPUT(args[1], VAL(1));
+                continue;
+            }
+
+            if (op == "sltiuw") {
+                VAL(1) = ((unsigned) VAL(2)) < int_of(args[3]);
+                OUTPUT(args[1], VAL(1));
+                continue;
+            }
+
             // Other operations
 
             if (op == "neg") {
@@ -227,6 +241,7 @@ int64_t interpret(std::string label) {
                 auto before = regs;
 
                 auto fn = args[2];
+                SAY("call " << fn);
                 for (int i = 0; i < fns[fn].size(); i++) {
                     regs[fns[fn][i]] = VAL(i + 3);
                     OUTPUT(fns[fn][i], VAL(i + 3));
@@ -245,7 +260,7 @@ int64_t interpret(std::string label) {
                 
                 // The pointer is a string of function name
                 std::string fn((char*) VAL(2));
-                SAY("jump to " << fn);
+                SAY("call indirect " << fn);
                 for (int i = 0; i < fns[fn].size(); i++) {
                     regs[fns[fn][i]] = VAL(i + 3);
                     OUTPUT(fns[fn][i], VAL(i + 3));
@@ -350,8 +365,14 @@ int64_t interpret(std::string label) {
                 continue;
             }
 
-            if (op == "mv" || op == "la") {
+            if (op == "mv") {
                 VAL(1) = VAL(2);
+                OUTPUT(args[1], VAL(1));
+                continue;
+            }
+
+            if (op == "la") {
+                VAL(1) = labels[args[2]];
                 OUTPUT(args[1], VAL(1));
                 continue;
             }
@@ -420,7 +441,7 @@ int main(int argc, char** argv) {
             // We need to get a string for it
             char* str = new char[fn_name.size() + 1];
             strcpy(str, fn_name.c_str());
-            regs[fn_name] = (int64_t) str;
+            labels[fn_name] = (int64_t) str;
             continue;
         }
 
@@ -430,7 +451,11 @@ int main(int argc, char** argv) {
 
             if (str.starts_with("global array ")) {
                 // Remove leading "global array " and trailing ":"
-                auto name = str.substr(13, str.size() - 14);
+                std::stringstream ss(str.substr(13, str.size() - 14));
+                int elem_size;
+                std::string name;
+
+                ss >> elem_size >> name;
 
                 // Look at the next line, i.e. contents of the array
                 std::string content;
@@ -441,15 +466,7 @@ int main(int argc, char** argv) {
                 size_t len = elems.size();
                 char* space = nullptr;
 
-                // For bytes and strings, the first element is an integer, and others are bytes
-                if (name.starts_with("bytes_") || name.starts_with("str_")) {
-                    space = new char[len + 3];
-                    * (int*) space = int_of(elems[0]);
-                    for (int i = 1; i < len; i++)
-                        space[i + 3] = int_of(elems[i]);
-                }
-
-                // For vtable, the elements are all function pointers
+                // vtables are special: no length needed, and the elements are all function pointers
                 // here we'll store function pointers as `char*` - the function name
                 if (name.starts_with("vtable_")) {
                     space = new char[len * 8];
@@ -460,11 +477,14 @@ int main(int argc, char** argv) {
                     }
                 }
 
-                if (!space) {
-                    std::cerr << "Bad SSA: unrecognized global array type\n";
-                    return 2;
+                // For other arrays, the first element is an integer, and others are of `elem_size`
+                else {
+                    space = new char[(len - 1) * elem_size + 4];
+                    * (int*) space = int_of(elems[0]);
+                    for (int i = 1; i < len; i++)
+                        space[(i - 1) * elem_size + 4] = int_of(elems[i]);
                 }
-                regs[name] = (int64_t) space;
+                labels[name] = (int64_t) space;
                 continue;
             }
 
@@ -474,7 +494,7 @@ int main(int argc, char** argv) {
             // This is simply a global variable
             std::string name; int size;
             ss >> name >> size;
-            regs[name] = (int64_t) new char[size];
+            labels[name] = (int64_t) new char[size];
         }
         
         // A new label is met. Refresh `label` and `inst`.
