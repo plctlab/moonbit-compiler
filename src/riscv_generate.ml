@@ -102,7 +102,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       | Not, [rs1] -> (Not { rd; rs1 })
       | And, [rs1; rs2] -> (And { rd; rs1; rs2 })
       | Or, [rs1; rs2] -> (Or { rd; rs1; rs2 })
-      | Xor, [rs1; rs2] -> (And { rd; rs1; rs2 })
+      | Xor, [rs1; rs2] -> (Xor { rd; rs1; rs2 })
       | Shl, [rs1; rs2] -> (Sll { rd; rs1; rs2 })
       | Shr, [rs1; rs2] -> 
           if rs1.ty = Mtype.T_uint || rs1.ty = T_uint64 then
@@ -132,20 +132,25 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
 
         | U64, U32 ->
             (* Discard higher bits by shifting *)
-            let temp = new_temp Mtype.T_uint in
+            let temp = new_temp Mtype.T_uint64 in
             Basic_vec.push ssa (Slli { rd = temp; rs = arg; imm = 32 });
             Basic_vec.push ssa (Srli { rd; rs = temp; imm = 32 })
 
         | I64, I32 | U64, I32 ->
             (* Discard higher bits by shifting, but arithmetic *)
-            let temp = new_temp Mtype.T_uint in
+            let temp = new_temp Mtype.T_uint64 in
             Basic_vec.push ssa (Slli { rd = temp; rs = arg; imm = 32 });
             Basic_vec.push ssa (Srai { rd; rs = temp; imm = 32 })
 
-        | U32, I32 | I32, U32 | I32, I64 | U32, U64 ->
+        | I32, U32 | U32, I32 | I32, I64 ->
             (* Simply do nothing *)
             Basic_vec.push ssa (Assign { rd; rs = arg });
 
+        | U32, U64 | U32, I64 ->
+            (* Must erase the signed bits *)
+            let temp = new_temp Mtype.T_uint64 in
+            Basic_vec.push ssa (Slli { rd = temp; rs = arg; imm = 32 });
+            Basic_vec.push ssa (Srli { rd; rs = temp; imm = 32 })
         
         | _ -> die())
 
@@ -386,7 +391,7 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       Basic_vec.push ssa (Add { rd = altered; rs1 = str; rs2 = offset });
       Basic_vec.push ssa (Load { rd; rs = altered; offset = 0; byte = 2 })
 
-  (* Length are both stored at the same place for these arrays. *)
+  (* Length are all stored at the same place for these arrays. *)
   | Pstringlength
   | Pbyteslength
   | Pfixedarray_length ->
@@ -508,7 +513,7 @@ let rec do_convert ssa (expr: Mcore.expr) =
         (match id with Pmutable_ident _ -> true | _ -> false)
       in
 
-      if not is_pointer then variable
+      if not is_pointer && not is_global then variable
       else if is_global then (
         let rd = new_temp ty in
         let label = new_temp Mtype.T_bytes in

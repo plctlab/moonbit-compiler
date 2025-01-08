@@ -334,7 +334,6 @@ fn setup(
 fn main {
   let s = State::new()
   let seed = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
-  let res = Array::new(capacity=32)
   s.init(seed)
 
   fn uint64(s : State) -> UInt64 {
@@ -349,10 +348,6 @@ fn main {
 
   for i = 0; i < 32; i = i + 1 {
     let x = uint64(s)
-    res.push(x)
-  }
-
-  for i = 0; i < res.length(); i = i + 1 {
-    println(res[i])
+    println(x)
   }
 }

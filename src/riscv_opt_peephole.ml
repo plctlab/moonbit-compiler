@@ -10,12 +10,14 @@ let is_const = Hashtbl.mem consts
 let const_analysis fn =
   let propagate_r ({ rd; rs1; rs2 }) op =
     if is_const rs1 && is_const rs2 && rd.ty == T_int then
-      Hashtbl.add consts rd (op (value_of rs1) (value_of rs2)) 
+      (* OCaml can possibly employ 8 byte integers, *)
+      (* so we convert it to int32 here *)
+      Hashtbl.add consts rd (Int32.to_int (Int32.of_int (op (value_of rs1) (value_of rs2))))
   in
 
   let propagate_i ({ rd; rs; imm }) op =
     if is_const rs && rd.ty == T_int then
-      Hashtbl.add consts rd (op (value_of rs) imm)
+      Hashtbl.add consts rd (Int32.to_int (Int32.of_int (op (value_of rs) imm)))
   in
 
   let look_for_const name =

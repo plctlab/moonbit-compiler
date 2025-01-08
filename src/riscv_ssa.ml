@@ -258,6 +258,7 @@ let to_string t =
   in
 
   (* Deals with signedness: signed or unsigned *)
+  (* In most R-type instructions, `rd` and the 2 `rs`es have the same type *)
   let rtypeu op ({ rd; rs1; rs2 }: r_type) =
     let width = (match rd.ty with
     | T_uint | T_uint64 -> "u"
@@ -301,6 +302,15 @@ let to_string t =
     Printf.sprintf "%s %s %s %d" width rd.name rs.name imm
   in
 
+  (* Similarly, `srl` and `sra` are instructions where `rs` matters rather than `rd` *)
+  let leftshift op ({ rd; rs; imm }: i_type) =
+    (* It's `rs` that matters, since rd is always a bool *)
+    let width = (match rs.ty with
+    | T_uint | T_int -> "w"
+    | _ -> "") in
+    Printf.sprintf "%s%s %s %s %d" op width rd.name rs.name imm
+  in
+
   let die x =
     failwith (Printf.sprintf "riscv_ssa.ml: invalid byte count (%d) in load/store" x)
   in
@@ -337,8 +347,8 @@ let to_string t =
     | Ori i -> itype "ori" i
     | Xori i -> itype "xori" i
     | Slli i -> itypew "slli" i
-    | Srli i -> itypew "srli" i
-    | Srai i -> itypew "srai" i
+    | Srli i -> leftshift "srli" i
+    | Srai i -> leftshift "srai" i
     | Slti i -> slti i
 
     | FAdd r -> rtype "fadd" r
