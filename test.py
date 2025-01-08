@@ -19,8 +19,8 @@ parser = argparse.ArgumentParser(prog = "test", description = "Tests the MoonBit
 parser.add_argument("-d", "--debug", action="store_true", help="enable stack traces on debug")
 parser.add_argument("-w", "--wasm", action="store_true", help="build to WASM rather than RISC-V")
 parser.add_argument("-i", "--build-index", action="store_true", help="build OCaml index and exit")
-parser.add_argument("-b", "--build-only", action="store_true", help="build without testing")
-parser.add_argument("-v", "--verbose", action="store_true", help="interpreter outputs detailed values")
+parser.add_argument("-b", "--build-only", action="store_true", help="rebuild compiler and interpreter")
+parser.add_argument("-v", "--verbose", action="store_true", help="on rebuild, makes interpreter output detailed values")
 parser.add_argument("-t", "--test", type=str, help="execute this test case only")
 
 args = parser.parse_args()
@@ -52,13 +52,11 @@ if args.build_index:
 print("Building MoonBit compiler...")
 os.system("dune build -p moonbit-lang")
 
-# WASM does not require an interpreter
-if not args.wasm:
+# Don't build the interpreter every time. Explicitly rebuild if needed.
+if args.build_only and not args.wasm:
     print("Building SSA interpreter...")
     os.makedirs("test/build", exist_ok=True)
     os.system(f"clang++ -std=c++20 {verbose} test/interpreter.cpp -Wall -g -o test/build/interpreter")
-
-if args.build_only:
     print("Done.")
     exit(0)
     

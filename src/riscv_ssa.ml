@@ -114,9 +114,16 @@ type phi = {
   rs: (var * string) list;
 }
 
+(**
+Each extern array starts with a 4-byte long integer, for its length. 
+What follows is an array of elements, each `elem_size` bytes long.
+
+VTables are different, though; they don't contain a length since the information is never needed.
+*)
 type extern_array = {
   label: string;
   values: string list;
+  elem_size: int;
 }
 
 type malloc = {
@@ -251,6 +258,7 @@ let to_string t =
   in
 
   (* Deals with signedness: signed or unsigned *)
+  (* In most R-type instructions, `rd` and the 2 `rs`es have the same type *)
   let rtypeu op ({ rd; rs1; rs2 }: r_type) =
     let width = (match rd.ty with
     | T_uint | T_uint64 -> "u"
@@ -279,6 +287,26 @@ let to_string t =
   let itypew op ({ rd; rs; imm }: i_type) =
     let width = (match rd.ty with
     | T_int | T_uint -> "w"
+    | _ -> "") in
+    Printf.sprintf "%s%s %s %s %d" op width rd.name rs.name imm
+  in
+
+  (* Dedicated for slt *)
+  let slti ({ rd; rs; imm }: i_type) =
+    (* It's `rs` that matters, since rd is always a bool *)
+    let width = (match rs.ty with
+    | T_uint -> "sltiu"
+    | T_int -> "sltiw"
+    | T_uint64 -> "sltiuw"
+    | _ -> "") in
+    Printf.sprintf "%s %s %s %d" width rd.name rs.name imm
+  in
+
+  (* Similarly, `srl` and `sra` are instructions where `rs` matters rather than `rd` *)
+  let leftshift op ({ rd; rs; imm }: i_type) =
+    (* It's `rs` that matters, since rd is always a bool *)
+    let width = (match rs.ty with
+    | T_uint | T_int -> "w"
     | _ -> "") in
     Printf.sprintf "%s%s %s %s %d" op width rd.name rs.name imm
   in
@@ -319,9 +347,9 @@ let to_string t =
     | Ori i -> itype "ori" i
     | Xori i -> itype "xori" i
     | Slli i -> itypew "slli" i
-    | Srli i -> itypew "srli" i
-    | Srai i -> itypew "srai" i
-    | Slti i -> itypew "slti" i
+    | Srli i -> leftshift "srli" i
+    | Srai i -> leftshift "srai" i
+    | Slti i -> slti i
 
     | FAdd r -> rtype "fadd" r
     | FSub r -> rtype "fsub" r
@@ -406,8 +434,8 @@ let to_string t =
     | GlobalVarDecl var ->
         Printf.sprintf "global %s %d\n" var.name (sizeof var.ty)
 
-    | ExtArray { label; values } ->
-        Printf.sprintf "global array %s:\n  %s\n" label (String.concat ", " values)
+    | ExtArray { label; values; elem_size } ->
+        Printf.sprintf "global array %d %s:\n  %s\n" elem_size label (String.concat ", " values)
 
     | Return var ->
         Printf.sprintf "return %s" var.name
