@@ -32,7 +32,14 @@ let traited_args = Hashtbl.create 64
 (** All captured variables for each closure. *)
 let captured = Hashtbl.create 64
 
+(** Offsets for fields in each variant in each enum type. *)
+let variants = Hashtbl.create 64
+
+(** The enum type that each variant belongs to. *)
+let belong = Hashtbl.create 64
+
 (** Get offset of the `pos`-th field in the record type called `name`. *)
+(** Note that there are n+1 fields for offsets in a n-field variant; the last one is the total size. *)
 let offsetof ty pos = Hashtbl.find offset_table (ty, pos)
 
 let is_trait ty = match ty with
@@ -52,6 +59,12 @@ let current_join_ret = ref []
 let push_label ssa label =
   current_label := label;
   Basic_vec.push ssa (Label label)
+
+(** For a type, get its name without qualifier *)
+let nameof (x: Mtype.t) = match x with
+| T_constr id -> id
+| T_trait id -> id
+| _ -> failwith "riscv_generate.ml: type does not have a user-defined name"
 
 let remove_space = String.map (fun c -> if c = ' ' then '_' else c)
 
@@ -414,6 +427,27 @@ let deal_with_prim ssa rd (prim: Primitive.prim) args =
       Basic_vec.push ssa (Addi { rd; rs = memory; imm = 4 });
       Basic_vec.push ssa (CallExtern { rd = unused; fn = "memset"; args = [ rd; init; len ] });
 
+  (* Get the field of a certain enum variant *)
+  (* The type of variant is in `tag`, and `index` indicates the field of it *)
+  | Penum_field { index; tag } ->
+      (* First find all the offsets *)
+      let arg = List.hd args in
+      let name = nameof arg.ty in
+      let name = Hashtbl.find belong name in
+      let tag_offsets = Hashtbl.find variants name in
+
+      (* Get the index of the variant within the enum type *)
+      let ind =
+        (match tag with Constr_tag_regular { index } | Extensible_tag { index } -> index)
+      in
+      let offsets = List.nth tag_offsets ind in
+      let offset = List.nth offsets index in
+      (* This won't go off bound because n-fielded variant has n+1 numbers in the list *)
+      let size = List.nth offsets (index + 1) - offset in
+
+      (* Load from the offset plus 4 for the tag *)
+      Basic_vec.push ssa (Load { rd; rs = arg; offset = offset + 4; byte = size })
+
   | Pignore -> ()
 
   (* Calculates whether two references are equal; gets a boolean value *)
@@ -460,8 +494,26 @@ let update_types ({ defs; _ }: Mtype.defs) =
         List.iteri (fun i x -> Hashtbl.add offset_table (ty, i) x) offsets;
         Hashtbl.add size_table ty !offset;
         Hashtbl.add trait_table ty (Basic_vec.empty ())
-    
-    | _ -> failwith "TODO: riscv_ssa.ml: cannot deal with this type"
+
+    (* Variant is a single possibility of Variant_constr *)
+    | Variant_constr -> ()
+
+    (* An enum type, also called sum type *)
+    | Variant { constrs } ->
+        let tag_offsets = Basic_vec.empty () in
+        List.iteri (fun i ({ payload; tag }: Mtype.constr_info) ->
+          let types = List.map (fun (x: Mtype.field_info) -> x.field_type) payload in
+          let sizes = List.map (fun x -> sizeof x) types in
+          let offsets = 0 :: Basic_lst.cumsum sizes in
+
+          (* Record the correspondence between name and index *)
+          let variant_name = Printf.sprintf "%s.%s" name tag.name_ in
+          Hashtbl.add belong variant_name name;
+          Basic_vec.push tag_offsets offsets
+        ) constrs;
+        Hashtbl.add variants name (tag_offsets |> Basic_vec.to_list)
+
+    | Constant_variant_constr -> failwith "riscv_generate.ml: cannot handle this type"
   in
   List.iter visit types
 
@@ -1056,9 +1108,100 @@ let rec do_convert ssa (expr: Mcore.expr) =
           Basic_vec.push ssa (Return return);
           unit)
 
-  | Cexpr_constr _ ->
-      prerr_endline "constr";
-      unit
+  | Cexpr_constr { tag; args } ->
+      let args = List.map (do_convert ssa) args in
+      let len = List.length args in
+      let index = tag.index in
+      let sizes = List.map (fun x -> sizeof x.ty) args in
+      let offsets = 0 :: Basic_lst.cumsum sizes in
+      (* Plus the space for the tag (an int) *)
+      let size = 4 + List.nth offsets len in
+
+      let rd = new_temp Mtype.T_bytes in
+      Basic_vec.push ssa (Malloc { rd; size });
+
+      (* First store the tag *)
+      let tag = new_temp Mtype.T_int in
+      Basic_vec.push ssa (AssignInt { rd = tag; imm = index });
+      Basic_vec.push ssa (Store { rd = tag; rs = rd; offset = 0; byte = 4 });
+
+      (* Then store all arguments *)
+      List.iter2 (fun arg offset ->
+        Basic_vec.push ssa (Store { rd = arg; rs = rd; offset = 4 + offset; byte = sizeof arg.ty })  
+      ) args (Basic_lst.take len offsets);
+      rd
+
+  | Cexpr_switch_constr { obj; cases; default; ty; _ } ->
+      (* Compile into a jump table *)
+      let obj = do_convert ssa obj in
+
+      (* Extract index *)
+      let index = new_temp Mtype.T_int in
+      Basic_vec.push ssa (Load { rd = index; rs = obj; offset = 0; byte = 4 });
+
+      (* Generate a jump table *)
+      let label = new_label "jumptable_" in
+      let jumps = List.init (List.length cases) (fun _ -> new_label "jumptable_") in
+      let out = new_label "jumptable_out_" in
+      Basic_vec.push global_inst (ExtArray { label; values = jumps; elem_size = 8 });
+
+      (* Choose which place to jump to *)
+      let jtable = new_temp Mtype.T_bytes in
+      let ptr_sz = new_temp Mtype.T_int in
+      let off = new_temp Mtype.T_int in
+      let place = new_temp Mtype.T_bytes in
+      let target = new_temp Mtype.T_bytes in
+      (* Load the address *)
+      Basic_vec.push ssa (AssignLabel { rd = jtable; imm = label });
+      Basic_vec.push ssa (AssignInt { rd = ptr_sz; imm = pointer_size });
+      Basic_vec.push ssa (Mul { rd = off; rs1 = index; rs2 = ptr_sz });
+      Basic_vec.push ssa (Add { rd = place; rs1 = jtable; rs2 = off });
+      Basic_vec.push ssa (Load { rd = target; rs = place; offset = 0; byte = pointer_size });
+      (* Jump to that address *)
+      Basic_vec.push ssa (JumpIndirect { rs = target; possibilities = jumps });
+
+      let tag_offsets = Hashtbl.find variants (nameof obj.ty) in
+      let returns = Basic_vec.empty () in
+      let visited = Basic_vec.empty () in
+      let correspondence = Array.make (List.length tag_offsets) "_uninit" in
+      (* For each label, generate the code for each label *)
+      List.iter (fun ((tag: Tag.t), ident, expr) ->
+        let lbl = List.nth jumps tag.index in
+
+        push_label ssa lbl;
+        (match ident with
+        | None -> ()
+        | Some x ->
+            Basic_vec.push ssa (Assign { rd = { name = Ident.to_string x; ty = obj.ty }; rs = obj }));
+        let ret = do_convert ssa expr in
+        Basic_vec.push ssa (Jump out);
+        Basic_vec.push returns (ret, lbl);
+        Basic_vec.push visited tag.index;
+        correspondence.(tag.index) <- lbl
+      ) cases;
+
+      (match default with
+      | None -> ()
+      | Some x ->
+          let default_lbl = new_label "jumptable_default_" in
+          let visited = visited |> Basic_vec.to_list in
+          
+          push_label ssa default_lbl;
+          let ret = do_convert ssa expr in
+          Basic_vec.push ssa (Jump out);
+          List.iteri (fun i x ->
+            if not (List.mem i visited) then (
+              Basic_vec.push returns (ret, default_lbl);
+              correspondence.(i) <- default_lbl
+            )
+          ) tag_offsets);
+
+      (* Now assign all these different things into rd *)
+      let rd = new_temp ty in
+
+      push_label ssa out;
+      Basic_vec.push ssa (Phi { rd; rs = Basic_vec.to_list returns });
+      rd
 
   | Cexpr_letrec _ ->
       prerr_endline "letrec";
@@ -1066,10 +1209,6 @@ let rec do_convert ssa (expr: Mcore.expr) =
 
   | Cexpr_record_update _ ->
       prerr_endline "record_update";
-      unit
-
-  | Cexpr_switch_constr _ ->
-      prerr_endline "switch constr";
       unit
 
   | Cexpr_switch_constant _ ->

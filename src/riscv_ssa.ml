@@ -137,6 +137,12 @@ type branch = {
   ifnot: string;
 }
 
+(** Jump and link relative: jumps to `rs`, one of the labels in `possibilities` *)
+type jr = {
+  rs: var;
+  possibilities: string list
+}
+
 type fn = {
   fn: string;
   args: var list;
@@ -201,6 +207,7 @@ and t =
 | Load of mem_access
 | Store of mem_access
 | Jump of string
+| JumpIndirect of jr
 | Branch of branch
 | Label of string
 | Phi of phi
@@ -410,7 +417,10 @@ let to_string t =
         Printf.sprintf "%s %s %s %d" op rd.name rs.name offset
 
     | Jump target ->
-        Printf.sprintf "j %s" target
+        Printf.sprintf "j %s" target    
+        
+    | JumpIndirect { rs; _ } ->
+          Printf.sprintf "jr %s" rs.name
 
     | Branch { cond; ifso; ifnot } ->
         Printf.sprintf "br %s %s %s" cond.name ifso ifnot
@@ -493,6 +503,7 @@ let rec reg_map fd fs t = match t with
 | Load { rd; rs; offset; byte } -> Load { rd = fd rd; rs = fs rs; offset; byte }
 | Store { rd; rs; offset; byte } -> Store { rd = fs rd; rs = fs rs; offset; byte }
 | Jump label -> Jump label
+| JumpIndirect { rs; possibilities } -> JumpIndirect { rs = fs rs; possibilities }
 | Branch { cond; ifso; ifnot } -> Branch { cond = fs cond; ifso; ifnot }
 | Label label -> Label label
 | Phi { rd; rs } -> Phi { rd = fd rd; rs = List.map (fun (x, name) -> (fs x, name)) rs }
