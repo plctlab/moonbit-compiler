@@ -382,6 +382,13 @@ int64_t interpret(std::string label) {
                 label = args[1];
                 break;
             }
+            
+            if (op == "jr") {
+                prev = label;
+                label = std::string((char*) VAL(1));
+                SAY("jump to " << label);
+                break;
+            }
 
             if (op == "br") {
                 prev = label;
@@ -468,7 +475,8 @@ int main(int argc, char** argv) {
 
                 // vtables are special: no length needed, and the elements are all function pointers
                 // here we'll store function pointers as `char*` - the function name
-                if (name.starts_with("vtable_")) {
+                // jumptables are also the same
+                if (name.starts_with("vtable_") || name.starts_with("jumptable_")) {
                     space = new char[len * 8];
                     for (int i = 0; i < len; i++) {
                         char* name = new char[elems[i].size() + 1];
@@ -507,7 +515,7 @@ int main(int argc, char** argv) {
         inst.push_back(str);
 
         // Finish of a block. Record it in `blocks`.
-        if (str.starts_with("j ") || str.starts_with("br ") || str.starts_with("return "))
+        if (str.starts_with("j ") || str.starts_with("br ") || str.starts_with("return ") || str.starts_with("jr "))
             blocks[label] = inst;
     }
 

@@ -62,6 +62,7 @@ let build_cfg fn body =
       | Jump _ -> Basic_vec.pop vec |> ignore; iter ()
       | Branch _ -> Basic_vec.pop vec |> ignore; iter ()
       | Return _ -> Basic_vec.pop vec |> ignore; iter ()
+      | JumpIndirect _ -> Basic_vec.pop vec |> ignore; iter ()
       | _ -> ()
     in
     iter ();
@@ -103,6 +104,7 @@ let build_cfg fn body =
         | Jump target -> [target]
         | Branch { ifso; ifnot } -> [ifso; ifnot]
         | Return _ -> Basic_vec.push (Hashtbl.find exit_fn fn) name; []
+        | JumpIndirect { possibilities; _ } -> possibilities
         | _ -> failwith "riscv_opt.ml: malformed SSA")
       in
       Basic_vec.append block.succ (Basic_vec.of_list successors);
