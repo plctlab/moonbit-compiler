@@ -246,6 +246,7 @@ let riscv_gen (core : Mcore.t) =
   core
   |> Riscv_generate.ssa_of_mcore
   |> Riscv_opt_gather.opt
+  |> Riscv_virtasm_generate.virtasm_of_ssa
   |> Riscv.generate
 
 let link_core ~(shrink_wasm : bool) ~(elim_unused_let : bool)
