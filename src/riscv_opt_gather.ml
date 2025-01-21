@@ -11,6 +11,7 @@ let opt ssa =
   for i = 1 to 3 do
     Riscv_opt_inline.inline ssa;
     Riscv_opt_peephole.peephole ssa;
+    Riscv_opt_escape.lower_malloc ssa;
   done;
 
   let s = map_fn ssa_of_cfg ssa in

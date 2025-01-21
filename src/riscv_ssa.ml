@@ -216,7 +216,8 @@ and t =
 | ExtArray of extern_array      (* An array in `.data` section *)
 | CallExtern of call_data       (* Call a C function *)
 | CallIndirect of call_indirect (* Call a function pointer *)
-| Malloc of malloc
+| Malloc of malloc              (* Allocate on heap *)
+| Alloca of malloc              (* Allocate on stack *)
 | Return of var
 
 (* Note: *)
@@ -434,6 +435,9 @@ let to_string t =
 
     | Malloc { rd; size } ->
         Printf.sprintf "malloc %s %d" rd.name size
+
+    | Alloca { rd; size } ->
+        Printf.sprintf "alloca %s %d" rd.name size
     
     | FnDecl { fn; args; body; } ->
         let args_str = String.concat ", " (List.map (fun x -> x.name) args) in
@@ -511,6 +515,7 @@ let rec reg_map fd fs t = match t with
 | GlobalVarDecl var -> GlobalVarDecl var
 | ExtArray arr -> ExtArray arr
 | Malloc { rd; size } -> Malloc { rd = fd rd; size }
+| Alloca { rd; size } -> Alloca { rd = fd rd; size }
 | Return var -> Return (fs var)
 
 let reg_iter fd fs t =
