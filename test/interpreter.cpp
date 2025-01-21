@@ -333,6 +333,14 @@ int64_t interpret(std::string label) {
                 continue;
             }
 
+            if (op == "alloca") {
+                auto len = int_of(args[2]);
+
+                VAL(1) = (int64_t) alloca(len);
+                OUTPUT(args[1], VAL(1));
+                continue;
+            }
+
             if (op == "phi") {
                 bool is_bad = true;
 
