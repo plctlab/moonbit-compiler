@@ -1,3 +1,5 @@
 open Riscv_virtasm
 
-let virtasm_of_ssa (ssa: Riscv_ssa.t list) = ssa
+module Ssa = Riscv_ssa
+
+let virtasm_of_ssa (ssa: Ssa.t list) = ssa

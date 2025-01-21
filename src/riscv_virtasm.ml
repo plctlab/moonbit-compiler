@@ -52,12 +52,8 @@ type assign_fslot =
   ; frs : slot_t
   }
 
-(**
-Defines a floating-point multiplication and addition operation.
-The result of multiplying `rs1` with `rs2`, and `rs3` with `rs2` are added together, 
-with the result stored in `frd`.
-*)
-type mul_add_fslot =
+(** For special floating-point operation*)
+type triple_fslot =
   { frd : slot_t
   ; frs1 : slot_t
   ; frs2 : slot_t
@@ -190,9 +186,13 @@ type t =
   | FsubD of r_fslot
   | FmulD of r_fslot
   | FdivD of r_fslot
-  | FmaddD of mul_add_fslot (* fmadd.d rd, rs1, rs2, rs3 => rd=(a*b)+(c*d) *)
+  | FmaddD of triple_fslot (* fmadd.d => f[rd] = f[rs1]×f[rs2]+f[rs3] *)
+  | FmsubD of triple_fslot (* fmsub.d => f[rd] = f[rs1]×f[rs2]-f[rs3] *)
+  | FnmaddD of triple_fslot (* fnmadd.d => f[rd] = -f[rs1]×f[rs2]+f[rs3] *)
+  | FnmsubD of triple_fslot (* fnmsub.d => f[rd] = -f[rs1]×f[rs2]-f[rs3] *)
   (* Floating-Point Compare Instructions *)
   | FeqD of compare_fslot (* == *)
+  | FltD of compare_fslot (* < *)
   | FleD of compare_fslot (* <= *)
   (* Floating-Point Conversion *)
   | FcvtDW of convert_fslot (* convert int32 to float *)
@@ -231,21 +231,29 @@ type branch_slot =
   ; ifnot : label_t
   }
 
-type branch_single =
-  { rs : slot_t
-  ; ifso : label_t
-  ; ifnot : label_t
+(** rd stores return address, label is the jump target *)
+type jal_label =
+  { rd : slot_t
+  ; label : label_t
+  }
+
+(** jump address is calculated by rs1 + offset, rd stores return address *)
+type jalr_label =
+  { rd : slot_t
+  ; rs1 : slot_t
+  ; offset : imm_t
   }
 
 (** These include conditional branches, unconditional jumps, function returns, and tail calls.  *)
 type term_t =
   | Beq of branch_slot (* Branch if equal *)
-  | Ble of branch_slot (* Branch if less than or equal *)
-  | Beqz of branch_single (* Branch if equal to zero *)
-  | Blez of branch_single (* Branch if less than or equal to zero *)
-  | Bltz of branch_single (* Branch if less than zero *)
-  | J of label_t (* jump to label (unconditional) *)
+  | Bne of branch_slot (* Branch if not equal *)
+  | Blt of branch_slot (* Branch if less than *)
+  | Bge of branch_slot (* Branch if greater than or equal *)
+  | Bltu of branch_slot (* Branch if less than unsigned *)
+  | Bgeu of branch_slot (* Branch if greater than or equal unsigned *)
   | Jal of label_t (* jump and link (store return address) *)
+  | Jalr of jalr_label (* jump and link register (store return address) *)
   | TailCall of call_data
   | TailCallIndirect of call_indirect
   | Ret of slot_t (* Unit for no return*)
@@ -256,8 +264,8 @@ type term_t =
 (* It also includes pseudo-instructions for convenient register allocation and defines the slot_t type,  *)
 (* which aims to allow virtual registers of Slots to coexist with real registers of Regs. *)
 
-module Map_int = Basic_map_int
-module Map_string = Basic_map_string
+module IntMap = Basic_map_int
+module StringMap = Basic_map_string
 
 type vblock_label = int
 type vfunc_label = string
@@ -279,10 +287,10 @@ type vfunc_t =
 
 (** VirtRvProg*)
 type vprog_t =
-  { blocks : vblock_t Map_int.t
-  ; funcs : vfunc_t Map_string.t
-  ; const : imm_t Map_string.t
-  ; loop_vars : slot_t Map_int.t
+  { blocks : vblock_t IntMap.t
+  ; funcs : vfunc_t StringMap.t
+  ; const : imm_t StringMap.t
+  ; loop_vars : slot_t IntMap.t
     (* Loop internal variables - 
     used for register allocation special identification*)
   }
