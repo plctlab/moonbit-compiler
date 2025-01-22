@@ -8,6 +8,7 @@
 #include <map>
 #include <codecvt>
 #include <locale>
+#include <cstdint>
 
 const int unit = unit;
 

@@ -231,25 +231,31 @@ and t =
 let pointer_size = 8
 
 (* This is the size of their representations, not the actual size. *)
-let sizeof ty = match ty with
-| Mtype.T_bool -> 1
-| Mtype.T_byte -> 1
-| Mtype.T_bytes -> pointer_size
-| Mtype.T_char -> 2
-| Mtype.T_double -> 8
-| Mtype.T_float -> 4
-| Mtype.T_func _ -> pointer_size
-| Mtype.T_int -> 4
-| Mtype.T_int64 -> 8
-| Mtype.T_string -> pointer_size
-| Mtype.T_uint -> 4
-| Mtype.T_uint64 -> 8
-| Mtype.T_unit -> 0
-| Mtype.T_tuple _ -> pointer_size
-| Mtype.T_constr id -> pointer_size
-| Mtype.T_fixedarray _ -> pointer_size
-| _ -> failwith "riscv_ssa.ml: cannot calculate size"
-
+let rec sizeof ty =
+  match ty with
+  | Mtype.T_bool -> 1
+  | Mtype.T_byte -> 1
+  | Mtype.T_bytes -> pointer_size
+  | Mtype.T_char -> 2
+  | Mtype.T_double -> 8
+  | Mtype.T_float -> 4
+  | Mtype.T_func _ -> pointer_size
+  | Mtype.T_int -> 4
+  | Mtype.T_int64 -> 8
+  | Mtype.T_string -> pointer_size
+  | Mtype.T_uint -> 4
+  | Mtype.T_uint64 -> 8
+  | Mtype.T_unit -> 0 (* Unit type has no size *)
+  | Mtype.T_tuple _ -> pointer_size
+  | Mtype.T_constr id -> pointer_size
+  | Mtype.T_fixedarray _ -> pointer_size
+  | Mtype.T_trait _ -> pointer_size
+  (* | Mtype.T_optimized_option { elem } -> pointer_size  *)
+  (* | Mtype.T_any { name } -> pointer_size  *)
+  (* | Mtype.T_maybe_uninit x -> sizeof x *)(*Same size as the contained type *)
+  (* | Mtype.T_error_value_result { ok; err; id } -> sizeof ok + sizeof err + pointer_size *)
+  | _ -> failwith ("riscv_ssa.ml: cannot calculate size for type: "^ Mtype.to_string ty)
+;;
 
 (** Emits SSA form. We choose a less human-readable form to facilitate verifier. *)
 let to_string t =

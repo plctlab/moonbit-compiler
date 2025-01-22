@@ -38,6 +38,9 @@ let variants = Hashtbl.create 64
 (** The enum type that each variant belongs to. *)
 let belong = Hashtbl.create 64
 
+(** Init function exprs**)
+let init_exprs = Basic_vec.empty ()
+
 (** Get offset of the `pos`-th field in the record type called `name`. *)
 (** Note that there are n+1 fields for offsets in a n-field variant; the last one is the total size. *)
 let offsetof ty pos = Hashtbl.find offset_table (ty, pos)
@@ -506,7 +509,7 @@ let update_types ({ defs; _ }: Mtype.defs) =
           let sizes = List.map (fun x -> sizeof x) types in
           let offsets = 0 :: Basic_lst.cumsum sizes in
 
-          (* Record the correspondence between name and index *)
+          (* Record the correspondence between nameand index *)
           let variant_name = Printf.sprintf "%s.%s" name tag.name_ in
           Hashtbl.add belong variant_name name;
           Basic_vec.push tag_offsets offsets
@@ -1313,6 +1316,11 @@ let generate_vtables () =
 Converts given `expr` into a list of SSA instructions,
 along with the variable in which the result of this expression is stored.
 *)
+let convert_expr_no_ret (expr: Mcore.expr) =
+  let ssa = Basic_vec.empty () in
+  let _ = do_convert ssa expr in
+  Basic_vec.map_into_list ssa (fun x -> x)
+
 let convert_expr (expr: Mcore.expr) =
   let ssa = Basic_vec.empty () in
   let return = do_convert ssa expr in
@@ -1448,7 +1456,6 @@ let convert_lambda (expr: Mcore.expr) =
 
   | w -> w
 
-
 (** Store captured variables for each closure in `captured` *)
 let process_closure ((fn: Mcore.fn), (name: Ident.t)) = 
   let free_ident = Mcore_util.free_vars ~exclude:(Ident.Set.singleton name) fn in
@@ -1484,6 +1491,11 @@ let convert_toplevel _start (top: Mcore.top_item) =
   in
 
   match top with
+  (* Init function *)
+  | Ctop_expr { expr; _ } ->
+    let expr = convert_expr_no_ret expr in
+    Basic_vec.append init_exprs @@ Basic_vec.of_list expr;
+    []
   | Ctop_fn { binder; func; export_info_; _ } ->
       let fn = Ident.to_string binder in
       let args = List.map var_of_param func.params in
@@ -1525,8 +1537,6 @@ let convert_toplevel _start (top: Mcore.top_item) =
       | Inline_code_text _
       | Inline_code_sexp _ -> failwith "RISC-V target does not support inline WASM"
       | Import _ -> failwith "riscv_ssa.ml: import should have been eliminated in link stage")
-  
-  | _ -> failwith "TODO: riscv_ssa.ml: don't know this toplevel"
 
 let find_functions (top: Mcore.top_item) =
   match top with
@@ -1589,6 +1599,7 @@ let ssa_of_mcore (core: Mcore.t) =
 
   (* Add _start *)
   let unused = new_temp Mtype.T_unit in
+  Basic_vec.append _start init_exprs;
   Basic_vec.push _start (Call { rd = unused; fn = "main"; args = [] });
   Basic_vec.push _start (Return unused);
 
