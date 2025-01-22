@@ -1,22 +1,23 @@
 (** Does all sorts of optimizations. *)
 
 open Riscv_ssa
+module Vec = Basic_vec
 
 (** Instruction in SSA form; feel free to change it to anything you'd like *)
 type instruction = Riscv_ssa.t
 
 (** Note: `body` does not include the label before instructions. *)
 type basic_block = {
-  mutable body: instruction Basic_vec.t;
-  succ: string Basic_vec.t;
-  pred: string Basic_vec.t;
+  mutable body: instruction Vec.t;
+  succ: string Vec.t;
+  mutable pred: string Vec.t;
 }
 
 let make () = 
   {
-    body = Basic_vec.empty ();
-    succ = Basic_vec.empty ();
-    pred = Basic_vec.empty ();
+    body = Vec.empty ();
+    succ = Vec.empty ();
+    pred = Vec.empty ();
   }
 
 
@@ -33,7 +34,7 @@ let (params: (string, var list) Hashtbl.t) = Hashtbl.create 256
 let block_of name = Hashtbl.find basic_blocks name
 
 (** Get the body of a basic block. *)
-let body_of name = (block_of name).body |> Basic_vec.to_list
+let body_of name = (block_of name).body |> Vec.to_list
 
 (**
 Builds control flow graph.
@@ -47,48 +48,50 @@ let build_cfg fn body =
   (* The first basic block in each function is unnamed, *)
   (* so we take the function name as its name. *)
   let name = ref fn in
-  let vec = ref (Basic_vec.empty ()) in
+  let vec = ref (Vec.empty ()) in
 
   (* There might be multiple jumps at end of each basic block. *)
   (* Clean them up. *)
-  let tidy (vec: instruction Basic_vec.t) = 
-    let rec iter () =
-      let len = Basic_vec.length vec in
-      if len <= 1 then ()
+  let tidy (vec: instruction Vec.t) = 
+    let tidied = Vec.empty () in
+    let len = Vec.length vec in
+    let rec iter i =
+      Vec.push tidied (Vec.get vec i);
+      
+      if i = len - 1 then ()
 
-      (* Check penultimate instruction, and pop the last according to it *)
-      else let x = Basic_vec.get vec (len - 2) in
+      else let x = Vec.get vec i in
       match x with
-      | Jump _ -> Basic_vec.pop vec |> ignore; iter ()
-      | Branch _ -> Basic_vec.pop vec |> ignore; iter ()
-      | Return _ -> Basic_vec.pop vec |> ignore; iter ()
-      | JumpIndirect _ -> Basic_vec.pop vec |> ignore; iter ()
-      | _ -> ()
+      | Jump _
+      | Branch _
+      | Return _ 
+      | JumpIndirect _ -> ()
+      | _ -> iter (i + 1)
     in
-    iter ();
-    vec
+    iter 0;
+    tidied
   in
 
   let separate_basic_block (inst: instruction) = 
     (match inst with
     | Label label ->
         Hashtbl.add basic_blocks !name (make ());
-        Basic_vec.append (block_of !name).body (tidy !vec);
+        Vec.append (block_of !name).body (tidy !vec);
 
-        (* Clear the instructions; Basic_vec does not offer clear() or something alike *)
-        vec := Basic_vec.empty ();
+        (* Clear the instructions; Vec does not offer clear() or something alike *)
+        vec := Vec.empty ();
         name := label
     
-    | x -> Basic_vec.push !vec x)
+    | x -> Vec.push !vec x)
   in
   List.iter separate_basic_block body;
 
   (* The last basic block is missed by `separate_basic_block` *)
   (* Manually add it *)
   Hashtbl.add basic_blocks !name (make ());
-  Basic_vec.append (block_of !name).body (!vec);
+  Vec.append (block_of !name).body (!vec);
 
-  Hashtbl.add exit_fn fn (Basic_vec.empty ());
+  Hashtbl.add exit_fn fn (Vec.empty ());
 
   (* Find successors of each block. *)
 
@@ -98,23 +101,29 @@ let build_cfg fn body =
   (* So we just look at them. *)
   let rec find_succ name =
     let block = block_of name in 
-    if Basic_vec.is_empty block.succ then
+    if Vec.is_empty block.succ then
       let successors =
-        (match Basic_vec.last block.body with
+        (match Vec.last block.body with
         | Jump target -> [target]
         | Branch { ifso; ifnot } -> [ifso; ifnot]
-        | Return _ -> Basic_vec.push (Hashtbl.find exit_fn fn) name; []
+        | Return _ -> Vec.push (Hashtbl.find exit_fn fn) name; []
         | JumpIndirect { possibilities; _ } -> possibilities
         | _ -> failwith "riscv_opt.ml: malformed SSA")
       in
-      Basic_vec.append block.succ (Basic_vec.of_list successors);
+      Vec.append block.succ (Vec.of_list successors);
       List.iter find_succ successors
   in
   find_succ fn;
 
   (* Find predecessors *)
   Hashtbl.iter (fun name block ->
-    Basic_vec.iter (fun succ -> Basic_vec.push (block_of succ).pred name) block.succ
+    Vec.iter (fun succ -> Vec.push (block_of succ).pred name) block.succ
+  ) basic_blocks;
+
+  (* Deduplicate *)
+  Hashtbl.iter (fun name block -> 
+    block.pred <-
+      block.pred |> Vec.to_list |> Stringset.of_list |> Stringset.to_seq |> List.of_seq |> Vec.of_list
   ) basic_blocks
 
 
@@ -147,16 +156,16 @@ let map_fn f ssa =
 
 (** Find all basic blocks in function `fn`, in depth-first order. *)
 let get_blocks fn =
-  let blocks = Basic_vec.empty () in
+  let blocks = Vec.empty () in
   let visited = ref Stringset.empty in
   let rec aux x = 
     if not (Stringset.mem x !visited) then
-      (Basic_vec.push blocks x;
+      (Vec.push blocks x;
       visited := Stringset.add x !visited;
-      Basic_vec.iter aux (block_of x).succ)
+      Vec.iter aux (block_of x).succ)
   in
   aux fn;
-  blocks |> Basic_vec.to_list
+  blocks |> Vec.to_list
 
 (**
 Liveness analysis.
@@ -204,7 +213,7 @@ let liveness_analysis fn =
     let phidef = ref Stringset.empty in
     let phiuse = ref Stringset.empty in
 
-    Basic_vec.iter (fun inst -> 
+    Vec.iter (fun inst -> 
       match inst with
       | Phi { rd; rs } ->
           phidef += rd.name;
@@ -225,7 +234,7 @@ let liveness_analysis fn =
 
   (* Keep doing until fixed point is reached *)
   let rec iterate worklist =
-    let last_item = Basic_vec.pop_opt worklist in
+    let last_item = Vec.pop_opt worklist in
     match last_item with
     | None -> ()
     | Some fn ->
@@ -238,7 +247,7 @@ let liveness_analysis fn =
           let new_live_out =
             Stringset.union (List.fold_left (fun x s ->
               Stringset.union x (Stringset.diff (Hashtbl.find live_in s) (Hashtbl.find phidefs s))
-            ) Stringset.empty (Basic_vec.to_list block.succ)) (Hashtbl.find phiuses name)
+            ) Stringset.empty (Vec.to_list block.succ)) (Hashtbl.find phiuses name)
           in
           
           Hashtbl.replace live_out name new_live_out;
@@ -253,21 +262,21 @@ let liveness_analysis fn =
           (* Push all of them into worklist *)
           if not (Stringset.equal old_live_in new_live_in) then
             (Hashtbl.replace live_in name new_live_in;
-            Basic_vec.append worklist block.pred)
+            Vec.append worklist block.pred)
         ) blocks;
         iterate worklist
   in
   (* Must clone a vector, otherwise `exit_fn` will become empty *)
-  iterate (Hashtbl.find exit_fn fn |> Basic_vec.to_list |> Basic_vec.of_list);
+  iterate (Hashtbl.find exit_fn fn |> Vec.to_list |> Vec.of_list);
   
   live_out
 
 (** Converts the optimized control flow graph back into SSA. *)
 let ssa_of_cfg fn = 
-  let inst = Basic_vec.empty () in
+  let inst = Vec.empty () in
   let blocks = get_blocks fn in
   List.iter (fun x ->
-    Basic_vec.push inst (Riscv_ssa.Label x);
-    Basic_vec.append inst (block_of x).body
+    Vec.push inst (Riscv_ssa.Label x);
+    Vec.append inst (block_of x).body
   ) blocks;
-  inst |> Basic_vec.to_list
+  inst |> Vec.to_list
