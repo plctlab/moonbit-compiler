@@ -19,8 +19,9 @@ parser = argparse.ArgumentParser(prog = "test", description = "Tests the MoonBit
 parser.add_argument("-d", "--debug", action="store_true", help="enable stack traces on debug")
 parser.add_argument("-w", "--wasm", action="store_true", help="build to WASM rather than RISC-V")
 parser.add_argument("-i", "--build-index", action="store_true", help="build OCaml index and exit")
-parser.add_argument("-b", "--build-only", action="store_true", help="rebuild compiler and interpreter")
+parser.add_argument("-b", "--build", action="store_true", help="rebuild compiler and interpreter")
 parser.add_argument("-v", "--verbose", action="store_true", help="on rebuild, makes interpreter output detailed values")
+parser.add_argument("-c", "--compile-only", action="store_true", help="compile without executing tests")
 parser.add_argument("-t", "--test", type=str, help="execute this test case only")
 
 args = parser.parse_args()
@@ -53,7 +54,7 @@ print("Building MoonBit compiler...")
 os.system("dune build -p moonbit-lang")
 
 # Don't build the interpreter every time. Explicitly rebuild if needed.
-if args.build_only and not args.wasm:
+if args.build and not args.wasm:
     print("Building SSA interpreter...")
     os.makedirs("test/build", exist_ok=True)
     os.system(f"clang++ -std=c++20 {verbose} test/interpreter.cpp -Wall -g -o test/build/interpreter")
@@ -88,12 +89,13 @@ with DirContext("test"):
         try_remove(f"build/{src}.mi")
 
         # Test.
-        os.system(f"build/interpreter build/{dest}.ssa > build/output.txt 2> build/debug.txt")
-        diff = os.system(f"diff build/output.txt src/{src}/{src}.ans")
-        
-        if diff == 0:
-            print("Passed.")
-        else:
-            success = False
+        if not args.compile_only:
+            os.system(f"build/interpreter build/{dest}.ssa > build/output.txt 2> build/debug.txt")
+            diff = os.system(f"diff build/output.txt src/{src}/{src}.ans")
+            
+            if diff == 0:
+                print("Passed.")
+            else:
+                success = False
 
-exit(0 if success else 1)
+exit(not success)
