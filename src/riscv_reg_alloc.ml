@@ -1,7 +1,6 @@
 open Riscv_virtasm
-module Ssa = Riscv_ssa
 
-let virtasm_of_ssa (ssa : Ssa.t list) =
+let reg_alloc (vprog : vprog_t) =
   let vprog : vprog_t =
     { blocks = VBlockMap.empty
     ; funcs = VFuncMap.empty

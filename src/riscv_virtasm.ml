@@ -12,6 +12,17 @@ let debsexp (x : S.t) : unit =
   print_endline @@ "[DEBUG]" ^ S.to_string x
 ;;
 
+let deblist (listn : string) (f : 'a -> string) (lst : 'a list) : unit =
+  let list_str =
+    lst
+    |> List.map f (* Apply the function to each element *)
+    |> String.concat "; " (* Concatenate the results with "; " *)
+  in
+  print_endline @@ "[DEBUG] " ^ listn ^ ": [";
+  print_endline @@ "    " ^ list_str ^ ";";
+  print_endline @@ "]"
+;;
+
 (** Similar to R-type instructions in RISC-V. *)
 type r_slot =
   { rd : slot_t
@@ -264,17 +275,30 @@ type term_t =
 (* It also includes pseudo-instructions for convenient register allocation and defines the slot_t type,  *)
 (* which aims to allow virtual registers of Slots to coexist with real registers of Regs. *)
 
+(* Key int*)
 module IntMap = Basic_map_int
+module VBlockMap = Basic_map_int
+module VSymbolMap = Basic_map_int
+
+(* Key string*)
 module StringMap = Basic_map_string
+module VFuncMap = Basic_map_string
+
+(* Vector alias*)
+module Vec = Basic_vec
 
 type vblock_label = int
 type vfunc_label = string
+type vsymbol_label = int
+
+(* Count for VirtSymbol*)
+let vsymbol_cnt = ref 0
 
 (** VirtRvBlock*)
 type vblock_t =
-  { body : t Basic_vec.t
+  { body : t Vec.t
   ; term : term_t (* Single Terminator*)
-  ; preds : vblock_label Basic_vec.t (* Predecessors*)
+  ; preds : vblock_label Vec.t (* Predecessors*)
   }
 
 (** VirtRvFunc*)
@@ -287,10 +311,10 @@ type vfunc_t =
 
 (** VirtRvProg*)
 type vprog_t =
-  { blocks : vblock_t IntMap.t
-  ; funcs : vfunc_t StringMap.t
-  ; const : imm_t StringMap.t
-  ; loop_vars : slot_t IntMap.t
+  { blocks : vblock_t VBlockMap.t
+  ; funcs : vfunc_t VFuncMap.t
+  ; consts : imm_t VSymbolMap.t
+  ; loop_vars : slot_t VBlockMap.t
     (* Loop internal variables - 
     used for register allocation special identification*)
   }
