@@ -74,6 +74,10 @@ with DirContext("test"):
 
         # Linkage emits target code.
         ret = os.system(f"{debug} moonc link-core {bundled}/core.core build/{src}.core -o build/{dest} -pkg-config-path {src}/moon.pkg.json -pkg-sources {core}:{src} -target {target}")
+                
+        # Remove intermediate files that we don't need.
+        try_remove(f"build/{src}.core")
+        try_remove(f"build/{src}.mi")
         
         if ret != 0:
             print("Compiler generated an error. Failed.")
@@ -83,10 +87,6 @@ with DirContext("test"):
         if args.wasm:
             print("WASM target does not support testing. Exit.")
             break;
-                
-        # Remove intermediate files that we don't need.
-        try_remove(f"build/{src}.core")
-        try_remove(f"build/{src}.mi")
 
         # Test.
         if not args.compile_only:

@@ -3,6 +3,9 @@ open Riscv_opt
 open Riscv_ssa
 
 let opt tac =
+  let out_noopt = Printf.sprintf "%s-no-opt.ssa" !Driver_config.Linkcore_Opt.output_file in
+  Basic_io.write out_noopt (String.concat "\n" (List.map Riscv_ssa.to_string tac));
+
   List.iter (fun top -> match top with
   | FnDecl { fn; args } -> Hashtbl.add params fn args
   | _ -> ()) tac;
