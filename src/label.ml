@@ -12,9 +12,11 @@
    <https://www.moonbitlang.com/licenses/moonbit-public-source-license-v1>.
 *)
 
-
 module Label = struct
-  type t = { name : string; [@ceh.ignore] stamp : int }
+  type t =
+    { name : string [@ceh.ignore]
+    ; stamp : int
+    }
 
   include struct
     let _ = fun (_ : t) -> ()
@@ -24,33 +26,36 @@ module Label = struct
          let bnds__001_ = ([] : _ Stdlib.List.t) in
          let bnds__001_ =
            let arg__005_ = Moon_sexp_conv.sexp_of_int stamp__004_ in
-           (S.List [ S.Atom "stamp"; arg__005_ ] :: bnds__001_
-             : _ Stdlib.List.t)
+           (S.List [ S.Atom "stamp"; arg__005_ ] :: bnds__001_ : _ Stdlib.List.t)
          in
          let bnds__001_ =
            let arg__003_ = Moon_sexp_conv.sexp_of_string name__002_ in
            (S.List [ S.Atom "name"; arg__003_ ] :: bnds__001_ : _ Stdlib.List.t)
          in
          S.List bnds__001_
-        : t -> S.t)
+       : t -> S.t)
+    ;;
 
     let _ = sexp_of_t
 
     let equal =
       (fun a__006_ b__007_ ->
-         if Stdlib.( == ) a__006_ b__007_ then true
+         if Stdlib.( == ) a__006_ b__007_
+         then true
          else Stdlib.( = ) (a__006_.stamp : int) b__007_.stamp
-        : t -> t -> bool)
+       : t -> t -> bool)
+    ;;
 
     let _ = equal
 
     let (hash_fold_t : Ppx_base.state -> t -> Ppx_base.state) =
-     fun hsv arg ->
+      fun hsv arg ->
       let hsv =
         let hsv = hsv in
         hsv
       in
       Ppx_base.hash_fold_int hsv arg.stamp
+    ;;
 
     let _ = hash_fold_t
 
@@ -61,14 +66,17 @@ module Label = struct
            hash_fold_t hsv arg)
       in
       fun x -> func x
+    ;;
 
     let _ = hash
 
     let compare =
       (fun a__008_ b__009_ ->
-         if Stdlib.( == ) a__008_ b__009_ then 0
+         if Stdlib.( == ) a__008_ b__009_
+         then 0
          else Stdlib.compare (a__008_.stamp : int) b__009_.stamp
-        : t -> t -> int)
+       : t -> t -> int)
+    ;;
 
     let _ = compare
   end
@@ -82,14 +90,31 @@ let rename t = { name = t.name; stamp = Basic_uuid.next () }
 
 let to_wasm_name (t : t) =
   Stdlib.String.concat "" [ "$"; t.name; "/"; Int.to_string t.stamp ]
+;;
 
 let to_wasm_label_loop t =
   let x = t.stamp in
   ("$loop:" ^ Int.to_string x : Stdlib.String.t)
+;;
 
 let to_wasm_label_break t =
   let x = t.stamp in
   ("$break:" ^ Int.to_string x : Stdlib.String.t)
+;;
+
+(** Used for generating function label in RISCV asm. *)
+let to_riscv_label_func t =
+  let fun_name = t.name in
+  let fun_version = t.stamp in
+  ("_" ^ fun_name ^ Int.to_string fun_version : Stdlib.String.t)
+;;
+
+(** Used for generating block label in RISCV asm. *)
+let to_riscv_label_block t =
+  let bl_name = t.name in
+  let bl_num = t.stamp in
+  ("." ^ bl_name ^ Int.to_string bl_num : Stdlib.String.t)
+;;
 
 module Hash = Basic_hashf.Make (Label)
 module Hashset = Basic_hashsetf.Make (Label)
