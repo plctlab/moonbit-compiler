@@ -5,27 +5,13 @@ based on the result.
 open Riscv_ssa
 open Riscv_opt
 
-type escape_state = 
-| NoEscape      (* Does not escape the function *)
-| LocalEscape   (* Escapes by getting captured by some closure *)
-| GlobalEscape  (* Escapes by storing into some place *)
-
-let join s1 s2 = match (s1, s2) with
-| GlobalEscape, _ | _, GlobalEscape -> GlobalEscape
-| LocalEscape, _ | _, LocalEscape -> LocalEscape
-| _ -> NoEscape
-
-let print_escape =
-  Hashtbl.iter (fun var state -> Printf.printf "%s: %s\n" var (match state with
-  | NoEscape -> "no escape"
-  | LocalEscape -> "local escape"
-  | GlobalEscape -> "global escape"))
-
-let get_escape table (var: string) =
-  if not (Hashtbl.mem table var) then
-    Hashtbl.add table var NoEscape;
-  Hashtbl.find table var
-
+let print_escape out_escape =
+  Hashtbl.iter (fun x y ->
+    Printf.printf "%s:\n" x;
+    Stringset.iter (fun x -> Printf.printf "%s " x) y;
+    Printf.printf "\n";
+  ) out_escape;
+  Printf.printf "\n"
 
 (**
 Does escape analysis.
@@ -40,8 +26,8 @@ let escape_analysis fn =
 
   let blocks = get_blocks fn in
   List.iter (fun name ->
-    Hashtbl.add escape_in name (Hashtbl.create 64);
-    Hashtbl.add escape_out name (Hashtbl.create 64);
+    Hashtbl.add escape_in name Stringset.empty;
+    Hashtbl.add escape_out name Stringset.empty
   ) blocks;
 
   let worklist = Basic_vec.of_list blocks in
@@ -49,95 +35,55 @@ let escape_analysis fn =
     let name = Basic_vec.pop worklist in
     let block = block_of name in
 
-    (* Escape_in should be the union of all escape_out *)
-    Basic_vec.iter (fun pred ->
-      let pred_out = Hashtbl.find escape_out pred in
-      let block_in = Hashtbl.find escape_in name in
-      Hashtbl.iter (fun var state ->
-        let existing = get_escape block_in var in
-        Hashtbl.replace block_in var (join existing state)
-      ) pred_out
-    ) block.pred;
+    (* Escape_out should be the union of all successor's escape_in *)
+    let new_out = Vec.fold_left ~f:(fun acc succ ->
+      Stringset.union acc (Hashtbl.find escape_in succ)
+    ) Stringset.empty block.succ in
+    Hashtbl.replace escape_out name new_out;
 
     (* Now calculate escape_out based on it *)
-    let old_out = Hashtbl.find escape_out name in
-    let last_out = ref old_out in
-    let new_out = Hashtbl.copy old_out in
-    let changed = ref true in
+    let old_in = Hashtbl.find escape_in name in
+    let new_in = ref (Stringset.union new_out old_in) in
 
-    let replace var state =
-      Hashtbl.replace new_out var.name state
+    (* Adds all variables if any one of them escapes *)
+    let add vars = 
+      let escaped = List.exists (fun x -> Stringset.mem x.name !new_in) vars in
+      if escaped then
+        new_in := Stringset.union !new_in (Stringset.of_list (List.map (fun x -> x.name) vars))
     in
 
-    while !changed do
-      changed := false;
-      Basic_vec.iter (fun x -> match x with
-      | Assign { rd; rs } ->
-          replace rd (get_escape new_out rs.name)
+    Vec.rev_iter (fun x -> match x with
+    | AssignLabel { rd; _ } -> new_in += rd.name
+    | Return x -> new_in += x.name
 
-      | AssignLabel { rd; _ } -> replace rd GlobalEscape
-      | Return x -> replace x GlobalEscape
+    | Call { rd; args } 
+    | CallExtern { rd; args } ->
+        List.iter (fun arg -> new_in += arg.name) args;
+        new_in += rd.name
 
-      | Call { rd; args } 
-      | CallExtern { rd; args } ->
-          List.iter (fun arg -> 
-            replace arg GlobalEscape
-          ) args;
-          replace rd GlobalEscape
+    | Store { rd; rs }
+    | Addi { rd; rs }
+    | Assign { rd; rs } ->
+        add [ rd; rs ]
 
-      | Store { rd; rs }
-      | Addi { rd; rs } ->
-          let ed = get_escape new_out rd.name in
-          let es = get_escape new_out rs.name in
-          let state = join ed es in
+    | Add { rd; rs1; rs2 }
+    | Sub { rd; rs1; rs2 } ->
+        add [ rd; rs1; rs2 ]
 
-          replace rd state;
-          replace rs state
+    | Phi { rd; rs } ->
+        let vars = List.map (fun (x, y) -> x) rs in
+        add (rd :: vars)
 
-      | Add { rd; rs1; rs2 }
-      | Sub { rd; rs1; rs2 } ->
-          let ed = get_escape new_out rd.name in
-          let es1 = get_escape new_out rs1.name in 
-          let es2 = get_escape new_out rs2.name in
-          let state = (join ed (join es1 es2)) in
+    | _ -> ()) block.body;
 
-          replace rd state;
-          replace rs1 state;
-          replace rs2 state
-
-      | Phi { rd; rs } ->
-          let state =
-            List.fold_left (fun acc (var, _) ->
-              join acc (get_escape new_out var.name)
-            ) NoEscape rs
-          in
-          replace rd state;
-          List.iter (fun (var, _) -> replace var state) rs
-
-      | _ -> ()) block.body;
-      
-      Hashtbl.iter (fun var state ->
-        if state != get_escape !last_out var then
-          changed := true
-      ) new_out;
-      last_out := new_out;
-    done;
-
-    (* If anything changes, put it back to queue *)
-    let changed = ref false in
-    Hashtbl.iter (fun var state ->
-      if state != get_escape old_out var then
-        changed := true
-    ) new_out;
-
-    (* Note this `!` does not mean not *)
-    if !changed then (
-      Hashtbl.replace escape_out name new_out;
-      Basic_vec.iter (fun x -> Basic_vec.push worklist x) block.succ
+    (* If anything changes, put relevant blocks back to queue *)
+    if Stringset.equal old_in !new_in |> not then (
+      Hashtbl.replace escape_in name !new_in;
+      Vec.iter (fun x -> Vec.push worklist x) block.succ;
     )
   done;
 
-  escape_out
+  escape_in
 
 (** Reforms `malloc` on heap to `alloca` on stack when possible. *)
 let malloc_to_alloca fn =
@@ -145,16 +91,16 @@ let malloc_to_alloca fn =
   let escape_data = escape_analysis fn in
   List.iter (fun name ->
     let block = block_of name in
-    let body = block.body |> Basic_vec.to_list in
+    let body = block.body |> Vec.to_list in
     let escaped = Hashtbl.find escape_data name in
     let changed = List.map (fun x -> match x with
     | Malloc { rd; size } ->
-        if get_escape escaped rd.name = NoEscape then
-          Alloca { rd; size }
-        else
+        if Stringset.mem rd.name escaped then
           Malloc { rd; size }
+        else
+          Alloca { rd; size }
     | w -> w) body in
-    block.body <- changed |> Basic_vec.of_list
+    block.body <- changed |> Vec.of_list
   ) blocks
 
 let lower_malloc ssa =
