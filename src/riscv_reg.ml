@@ -148,7 +148,6 @@ module FReg = struct
   ;;
 end
 
-
 (**
 Defines an immediate value type.
 
@@ -181,13 +180,6 @@ module Slot = struct
     | Reg of Reg.t (* Physical register *)
     | FReg of FReg.t (* Floating-point physical register *)
 
-  include struct 
-    let _ = fun (_ : t) -> ()
-    let compare = compare
-    let equal = (=)
-    let hash = Hashtbl.hash
-  end
-
   (* Convert t to string representation *)
   let to_string (s : t) : string =
     match s with
@@ -197,6 +189,16 @@ module Slot = struct
     | FReg fr -> FReg.to_string fr
     | Unit -> "_"
   ;;
+
+  include struct
+    let _ = fun (_ : t) -> ()
+    let compare = compare
+    let equal = ( = )
+    let hash = Hashtbl.hash
+
+    (* Map function*)
+    let sexp_of_t (x : t) : S.t = Atom (to_string x)
+  end
 
   (* Counter for integer slots *)
   let slot_cnt = ref 0
@@ -217,7 +219,71 @@ module Slot = struct
     fslot_cnt := i + 1;
     FSlot i
   ;;
+
+  let is_int = function
+    | Slot _ -> true
+    | Reg _ -> true
+    | _ -> false
+  ;;
+
+  let is_float = function
+    | FSlot _ -> true
+    | FReg _ -> true
+    | _ -> false
+  ;;
 end
 
-(* Key t*)
-module SlotSet = Basic_hashsetf.Make (Slot)
+module SlotSet = struct
+  include Basic_setf.Make (Slot)
+
+  (* Clone function to create a deep copy of the SlotSet *)
+  let clone s = of_list (to_list s)
+
+  (* A comprehensive and efficient equal function *)
+  let equal s1 s2 =
+    (* 1. Physical reference check: same object, directly equal *)
+    if s1 == s2
+    then true
+    else if
+      (* 2. If number of elements differs, not equal *)
+      cardinal s1 <> cardinal s2
+    then false
+    else
+      (* 3. Check if each element in s1 exists in s2 *)
+      for_all s1 (fun x -> mem s2 x)
+  ;;
+end
+
+module SlotMap = struct
+  include Basic_mapf.Make (Slot)
+
+  (* Clone function to create a deep copy of the SlotMap *)
+  let clone m = of_array (to_sorted_array m)
+
+  (*
+     [equal eqv m1 m2] 
+     returns true if and only if:
+       1) [m1] and [m2] contain exactly the same set of keys, and
+       2) for every key k, values in m1 and m2 are considered equal by [eqv].
+  *)
+  let equal (eqv : 'a -> 'a -> bool) (m1 : 'a t) (m2 : 'a t) : bool =
+    (* If number of elements differs, directly return false *)
+    if cardinal m1 <> cardinal m2
+    then false
+    else (
+      (* Otherwise iterate through m1 to check each key-value pair *)
+      try
+        iter m1 (fun k v1 ->
+          match find_opt m2 k with
+          | None ->
+            (* If key not found in m2, determine unequal and break *)
+            raise Exit
+          | Some v2 ->
+            (* If custom eqv function determines unequal values, break *)
+            if not (eqv v1 v2) then raise Exit);
+        (* If no mismatches found, return true *)
+        true
+      with
+      | Exit -> false)
+  ;;
+end
