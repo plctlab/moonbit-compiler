@@ -236,6 +236,66 @@ module Inst = struct
     | Reload of stack_slot
     | FSpill of stack_fslot
     | FReload of stack_fslot
+
+  let inst_map (inst : t) (rd : Slot.t -> Slot.t list) (rs : Slot.t -> Slot.t list) =
+    match inst with
+    | Add r_slot
+    | Sub r_slot
+    | And r_slot
+    | Or r_slot
+    | Xor r_slot
+    | Sll r_slot
+    | Srl r_slot
+    | Sra r_slot
+    | Mul r_slot
+    | Div r_slot
+    | Divu r_slot
+    | Rem r_slot
+    | Remu r_slot -> rd r_slot.rd @ rs r_slot.rs1 @ rs r_slot.rs2
+    | Addi i_slot | Slli i_slot | Srli i_slot | Srai i_slot ->
+      rd i_slot.rd @ rs i_slot.rs1
+    | Lw mem_slot | Ld mem_slot | Sw mem_slot | Sd mem_slot ->
+      rd mem_slot.rd @ rs mem_slot.base
+    | FaddD r_fslot | FsubD r_fslot | FmulD r_fslot | FdivD r_fslot ->
+      rd r_fslot.frd @ rs r_fslot.frs1 @ rs r_fslot.frs2
+    | FmaddD triple_fslot
+    | FmsubD triple_fslot
+    | FnmaddD triple_fslot
+    | FnmsubD triple_fslot ->
+      rd triple_fslot.frd
+      @ rs triple_fslot.frs1
+      @ rs triple_fslot.frs2
+      @ rs triple_fslot.frs3
+    | FeqD compare_fslot | FltD compare_fslot | FleD compare_fslot ->
+      rd compare_fslot.rd @ rs compare_fslot.frs1 @ rs compare_fslot.frs2
+    | FcvtDW convert_fslot | FcvtDL convert_fslot ->
+      rd convert_fslot.frd @ rs convert_fslot.rs
+    | FcvtLD convert_slot | FcvtWDRtz convert_slot ->
+      rd convert_slot.rd @ rs convert_slot.frs
+    | FsqrtD assign_fslot | FabsD assign_fslot | FnegD assign_fslot | FmvD assign_fslot ->
+      rd assign_fslot.frd @ rs assign_fslot.frs
+    | Fld mem_fslot | Fsd mem_fslot -> rd mem_fslot.frd @ rs mem_fslot.base
+    | La assign_label -> []
+    | Li assign_int64 -> []
+    | Neg assign_slot | Mv assign_slot -> rd assign_slot.rd @ rs assign_slot.rs
+    | FmvDX assign_direct -> rd assign_direct.frd @ rs assign_direct.rs
+    | FmvDXZero single_fslot -> []
+    | Call call_data ->
+      rd call_data.rd
+      @ List.concat_map rs call_data.args
+      @ List.concat_map rs call_data.fargs
+    | CallIndirect call_indirect ->
+      rd call_indirect.rd
+      @ rs call_indirect.fn
+      @ List.concat_map rs call_indirect.args
+      @ List.concat_map rs call_indirect.fargs
+    | Spill stack_slot | Reload stack_slot -> rd stack_slot.target @ rs stack_slot.origin
+    | FSpill stack_fslot | FReload stack_fslot ->
+      rd stack_fslot.target @ rs stack_fslot.origin
+  ;;
+
+  let get_srcs (inst : t) : Slot.t list = inst_map inst (fun x -> []) (fun x -> [ x ])
+  let get_dests (inst : t) : Slot.t list = inst_map inst (fun x -> [ x ]) (fun x -> [])
 end
 
 (* Vector alias*)
@@ -297,12 +357,27 @@ module Term = struct
     | TailCall of call_data
     | TailCallIndirect of call_indirect
     | Ret of Slot.t (* Unit for no return*)
+
+  let get_srcs (term : t) : Slot.t list =
+    match term with
+    | Beq branch_slot
+    | Bne branch_slot
+    | Blt branch_slot
+    | Bge branch_slot
+    | Bltu branch_slot
+    | Bgeu branch_slot -> [ branch_slot.rs1; branch_slot.rs2 ]
+    | Jalr jalr_label -> [ jalr_label.rs1 ]
+    | TailCall call_data -> call_data.args
+    | TailCallIndirect call_indirect -> call_indirect.args
+    | Ret _ -> []
+    | J _ | Jal _ -> []
+  ;;
 end
 
 (** VirtRvBlock*)
 module VBlock = struct
   type t =
-    { body : t Vec.t
+    { body : Inst.t Vec.t
     ; term : Term.t (* Single Terminator*)
     ; preds : VBlockLabel.t Vec.t (* Predecessors*)
     }
@@ -323,6 +398,8 @@ module VBlock = struct
       (* Tail calls typically transfer control to another function, no direct successor *)
     | Ret _ -> [] (* Return terminates the current function, so no successor blocks *)
   ;;
+
+  let get_body_insts (block : t) : Inst.t list = Vec.to_list block.body
 end
 
 (** VirtRvFunc*)
