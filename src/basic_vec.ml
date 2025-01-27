@@ -73,6 +73,12 @@ let iter f d =
     f arr.!(i)
   done
 
+let rev_iter f d =
+  let arr = d.arr in
+  for i = d.len - 1 downto 0 do
+    f arr.!(i)
+  done
+
 let iteri d f =
   let arr = d.arr in
   for i = 0 to d.len - 1 do

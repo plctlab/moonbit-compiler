@@ -58,6 +58,14 @@ let output_idom idom =
     Printf.printf "idom(%s) = %s\n" x y;
   ) idom
 
+let output_frontier frontier =
+  print_endline "Frontiers:";
+  Hashtbl.iter (fun x y ->
+    Printf.printf "%s: \n" x;
+    Stringset.iter (fun z -> Printf.printf "%s " z) y;
+    Printf.printf "\n\n"
+  ) frontier
+
 (**
 Calculate dominator.
 Uses the classic data-flow approach, rather than the compilcated Lengauer-Tarjan algorithm.
