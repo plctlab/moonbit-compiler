@@ -449,6 +449,50 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       (* Load from the offset plus 4 for the tag *)
       Vec.push tac (Load { rd; rs = arg; offset = offset + 4; byte = size })
 
+  (* There is a bunch of `Pccall`s used in primitive.ml *)
+  (* We'll match each function name separately *)
+  | Pccall { func_name = "add_string" } ->
+      let s1 = List.nth args 0 in
+      let s2 = List.nth args 1 in
+
+      (* First load their lengths *)
+      let l1 = new_temp Mtype.T_int in
+      let l2 = new_temp Mtype.T_int in
+      Vec.push tac (Load { rd = l1; rs = s1; offset = -4; byte = 4 });
+      Vec.push tac (Load { rd = l2; rs = s2; offset = -4; byte = 4 });
+
+      (* Multiply them by sizeof(char) *)
+      let char_size = new_temp Mtype.T_int in
+      let new_len = new_temp Mtype.T_int in
+      Vec.push tac (AssignInt { rd = char_size; imm = sizeof Mtype.T_char });
+      Vec.push tac (Add { rd = new_len; rs1 = l2; rs2 = l1 });
+
+      (* Calculate the new length *)
+      let space_size = new_temp Mtype.T_int in
+      Vec.push tac (Mul { rd = space_size; rs1 = new_len; rs2 = char_size });
+      Vec.push tac (Addi { rd = space_size; rs = space_size; imm = sizeof Mtype.T_int });
+
+      (* Then allocate the correct amount of space *)
+      let space = new_temp Mtype.T_bytes in
+      Vec.push tac (CallExtern { rd = space; fn = "malloc"; args = [space_size] });
+
+      (* Store the length and add the offset *)
+      Vec.push tac (Store { rd = new_len; rs = space; offset = 0; byte = 4 });
+      Vec.push tac (Addi { rd = space; rs = space; imm = 4 });
+
+      (* Now copy the values into it *)
+      Vec.push tac (Mul { rd = l1; rs1 = l1; rs2 = char_size });
+      Vec.push tac (Mul { rd = l2; rs1 = l2; rs2 = char_size });
+
+      Vec.push tac (CallExtern { rd = unit; fn = "memcpy"; args = [space; s1; l1] });
+
+      let ptr = new_temp Mtype.T_bytes in
+      Vec.push tac (Add { rd = ptr; rs1 = space; rs2 = l1 });
+      Vec.push tac (CallExtern { rd = unit; fn = "memcpy"; args = [ptr; s2; l2] });
+
+      (* Store the space into rd *)
+      Vec.push tac (Assign { rd; rs = space })
+
   | Pignore ->
       Vec.push tac (Assign { rd; rs = unit })
 
