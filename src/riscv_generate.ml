@@ -505,9 +505,20 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       Vec.push tac (Xor { rd = temp; rs1 = a; rs2 = b });
       Vec.push tac (Slti { rd; rs = temp; imm = 1 })
 
+  (* Create a null-pointer. *)
+  | Pnull ->
+      Vec.push tac (AssignInt64 { rd; imm = 0L })
+
+  | Pis_null ->
+      let zero = new_temp Mtype.T_bytes in
+      Vec.push tac (AssignInt64 { rd = zero; imm = 0L });
+      Vec.push tac (Eq { rd; rs1 = List.hd args; rs2 = zero });
+
   | Ppanic ->
       Vec.push tac (CallExtern { rd; fn = "abort"; args })
 
+  (* ref.as_non_null in WASM is just a copy *)
+  | Pas_non_null
   | Pidentity ->
       Vec.push tac (Assign { rd; rs = List.hd args })
   
@@ -1205,11 +1216,6 @@ let rec do_convert tac (expr: Mcore.expr) =
 
   | Cexpr_switch_constant { obj; cases; default; ty; _ } ->
       let index = do_convert tac obj in
-
-      let die () =
-        failwith "riscv_generate.ml: bad match on constants"
-      in
-
       let len = List.length cases in
       
       if len = 0 then (
@@ -1217,120 +1223,140 @@ let rec do_convert tac (expr: Mcore.expr) =
         do_convert tac default
       ) else (
         let rd = new_temp ty in 
-        let (const_ty, _) = List.hd cases in
-        (match const_ty with 
-        | Constant.C_int { v; } ->
-            (* Every match case here is an int. Extract the values. *)
-            let values =
-              List.map (fun (t, _) -> 
-                match t with
-                | Constant.C_int { v } -> Int32.to_int v
-                | _ -> die()
-              ) cases
-            in
 
-            let mx = List.fold_left (fun mx x -> max mx x) (-2147483647-1) values in
-            let mn = List.fold_left (fun mn x -> min mn x) 2147483647 values in
+        let values =
+          List.map (fun (t, _) -> 
+            match t with
+            | Constant.C_int { v } -> Int32.to_int v
+            | Constant.C_char v -> Uchar.to_int v
+            | _ -> failwith "TODO: unsupported switch constant type"
+          ) cases
+        in
+        
+        let mx = List.fold_left (fun mx x -> max mx x) (-2147483647-1) values in
+        let mn = List.fold_left (fun mn x -> min mn x) 2147483647 values in
 
-            (* Sparse values, generate a hash function *)
-            if mx - mn >= 20 then (
-              failwith "TODO: large"
-            )
+        (* Sparse values, convert to if-else *)
+        if mx - mn >= 256 then (
+          let ifexit = new_label "match_ifexit_" in
+          List.iter2 (fun x (_, expr) ->
+            let equal = new_temp Mtype.T_bool in
+            let v = new_temp Mtype.T_int in
+            let ifso = new_label "match_ifso_" in
+            let ifnot = new_label "match_ifnot_" in
+
+            Vec.push tac (AssignInt { rd = v; imm = x });
+            Vec.push tac (Eq { rd = equal; rs1 = index; rs2 = v });
+            Vec.push tac (Branch { cond = equal; ifso; ifnot });
+            
+            (* Generate the match case *)
+            Vec.push tac (Label ifso);
+            let ret = do_convert tac expr in
+            Vec.push tac (Assign { rd; rs = ret });
+            Vec.push tac (Jump ifexit);
+
+            Vec.push tac (Label ifnot);
+            ()
+          ) values cases;
+
+          (* The last ifnot corresponds to the default case *)
+          let ret = do_convert tac default in
+          Vec.push tac (Assign { rd; rs = ret });
+          Vec.push tac (Jump ifexit);
+
+          Vec.push tac (Label ifexit)
+        )
+      
+        (* Dense values, emit a jump table *)
+        else (
+          let table = new_label "jumptable_int_" in
+          let jump = new_label "do_jump_int_" in
+          let jumps = List.init (mx - mn + 1) (fun _ -> new_label "jumptable_int_") in
+          let out = new_label "jumptable_int_out_" in
+          let default_lbl = new_label "jumptable_default_" in
+
+          (* If the value is outside the min/max range, jump to default *)
+          let inrange = new_temp Mtype.T_bool in
+          let maximum = new_temp Mtype.T_int in
+          let minimum = new_temp Mtype.T_int in
+          let _1 = new_temp Mtype.T_bool in
+          let _2 = new_temp Mtype.T_bool in
+
+          (* Evaluate (x < max) && (x > min), which is the range where we can use jump table *)
+          Vec.push tac (AssignInt { rd = maximum; imm = mx });
+          Vec.push tac (AssignInt { rd = minimum; imm = mn });
+          Vec.push tac (Leq { rd = _1; rs1 = index; rs2 = maximum });
+          Vec.push tac (Geq { rd = _2; rs1 = index; rs2 = minimum });
+          Vec.push tac (And { rd = inrange; rs1 = _1; rs2 = _2 });
+          Vec.push tac (Branch { cond = inrange; ifso = jump; ifnot = default_lbl });
+
+          (* Load the address *)
+          Vec.push tac (Label jump);
+
+          let jtable = new_temp Mtype.T_bytes in
+          let ptr_sz = new_temp Mtype.T_int in
+          let off = new_temp Mtype.T_int in
+          let altered = new_temp Mtype.T_bytes in
+          let target = new_temp Mtype.T_bytes in
+
+          Vec.push tac (AssignLabel { rd = jtable; imm = table });
+          Vec.push tac (AssignInt { rd = ptr_sz; imm = pointer_size });
           
-            (* Dense values, just get a jump table *)
-            else (
-              let table = new_label "jumptable_int_" in
-              let jump = new_label "do_jump_int_" in
-              let jumps = List.init (mx - mn + 1) (fun _ -> new_label "jumptable_int_") in
-              let out = new_label "jumptable_int_out_" in
-              let default_lbl = new_label "jumptable_default_" in
+          (* We must also minus the minimum, unlike switch_constr *)
+          let min_var = new_temp Mtype.T_int in
+          let ind_2 = new_temp Mtype.T_int in
 
-              (* If the value is outside the min/max range, jump to default *)
-              let inrange = new_temp Mtype.T_bool in
-              let maximum = new_temp Mtype.T_int in
-              let minimum = new_temp Mtype.T_int in
-              let _1 = new_temp Mtype.T_bool in
-              let _2 = new_temp Mtype.T_bool in
+          Vec.push tac (AssignInt { rd = min_var; imm = mn });
+          Vec.push tac (Sub { rd = ind_2; rs1 = index; rs2 = min_var });
 
-              (* Evaluate (x < max) && (x > min), which is the range where we can use jump table *)
-              Vec.push tac (AssignInt { rd = maximum; imm = mx });
-              Vec.push tac (AssignInt { rd = minimum; imm = mn });
-              Vec.push tac (Leq { rd = _1; rs1 = index; rs2 = maximum });
-              Vec.push tac (Geq { rd = _2; rs1 = index; rs2 = minimum });
-              Vec.push tac (And { rd = inrange; rs1 = _1; rs2 = _2 });
-              Vec.push tac (Branch { cond = inrange; ifso = jump; ifnot = default_lbl });
+          (* Now find which address to jump to *)
+          Vec.push tac (Mul { rd = off; rs1 = ind_2; rs2 = ptr_sz });
+          Vec.push tac (Add { rd = altered; rs1 = jtable; rs2 = off });
+          Vec.push tac (Load { rd = target; rs = altered; offset = 0; byte = pointer_size });
 
-              (* Load the address *)
-              Vec.push tac (Label jump);
+          let visited = Vec.empty () in
+          let correspondence = Array.make (mx - mn + 1) "_uninit" in
+    
+          (* For each label, generate the code of it *)
+          let tac_cases = Vec.empty () in
 
-              let jtable = new_temp Mtype.T_bytes in
-              let ptr_sz = new_temp Mtype.T_int in
-              let off = new_temp Mtype.T_int in
-              let altered = new_temp Mtype.T_bytes in
-              let target = new_temp Mtype.T_bytes in
+          List.iter2 (fun value (_, expr) ->
+            let lbl = List.nth jumps (value - mn) in
+    
+            Vec.push tac_cases (Label lbl);
+            let ret = do_convert tac_cases expr in
+            Vec.push tac_cases (Assign { rd; rs = ret });
+            Vec.push tac_cases (Jump out);
+            Vec.push visited value;
+            correspondence.(value - mn) <- lbl
+          ) values cases;
 
-              Vec.push tac (AssignLabel { rd = jtable; imm = table });
-              Vec.push tac (AssignInt { rd = ptr_sz; imm = pointer_size });
-              
-              (* We must also minus the minimum, unlike switch_constr *)
-              let min_var = new_temp Mtype.T_int in
-              let ind_2 = new_temp Mtype.T_int in
+          (* For each values in the (min, max) range, redirect them into default *)
+          let visited = visited |> Vec.to_list in
+          
+          Vec.push tac_cases (Label default_lbl);
+          let ret = do_convert tac_cases default in
+          Vec.push tac_cases (Assign { rd; rs = ret });
+          Vec.push tac_cases (Jump out);
 
-              Vec.push tac (AssignInt { rd = min_var; imm = mn });
-              Vec.push tac (Sub { rd = ind_2; rs1 = index; rs2 = min_var });
-
-              (* Now find which address to jump to *)
-              Vec.push tac (Mul { rd = off; rs1 = ind_2; rs2 = ptr_sz });
-              Vec.push tac (Add { rd = altered; rs1 = jtable; rs2 = off });
-              Vec.push tac (Load { rd = target; rs = altered; offset = 0; byte = pointer_size });
-
-              let visited = Vec.empty () in
-              let correspondence = Array.make (List.length cases) "_uninit" in
-        
-              (* For each label, generate the code of it *)
-              let tac_cases = Vec.empty () in
-
-              List.iter2 (fun value (_, expr) ->
-                let lbl = List.nth jumps (value - mn) in
-        
-                Vec.push tac_cases (Label lbl);
-                let ret = do_convert tac_cases expr in
-                Vec.push tac_cases (Assign { rd; rs = ret });
-                Vec.push tac_cases (Jump out);
-                Vec.push visited value;
-                correspondence.(value - mn) <- lbl
-              ) values cases;
-
-              (* For each values in the (min, max) range, redirect them into default *)
-              let visited = visited |> Vec.to_list in
-              
-              Vec.push tac_cases (Label default_lbl);
-              let ret = do_convert tac_cases default in
-              Vec.push tac_cases (Assign { rd; rs = ret });
-              Vec.push tac_cases (Jump out);
-
-              List.iter (fun i ->
-                if not (List.mem i visited) then (
-                  correspondence.(i - mn) <- default_lbl
-                )
-              ) (List.init (mx - mn) (fun i -> i + mn));
-
-              (* Store the correct order of jump table *)
-              Vec.push tac_cases (Label out);
-              Vec.push global_inst (ExtArray
-                { label = table; values = Array.to_list correspondence; elem_size = 8 });
-
-              (* Deduplicate possibilities and jump there *)
-              let possibilities =
-                Array.to_list correspondence |> Stringset.of_list |> Stringset.to_seq |> List.of_seq
-              in
-
-              Vec.push tac (JumpIndirect { rs = target; possibilities });
-              Vec.append tac tac_cases;
-
+          List.iter (fun i ->
+            if not (List.mem i visited) then (
+              correspondence.(i - mn) <- default_lbl
             )
-        
-        | _ -> failwith "TODO: unsupported switch constant type");
+          ) (List.init (mx - mn) (fun i -> i + mn));
+
+          (* Store the correct order of jump table *)
+          Vec.push tac_cases (Label out);
+          Vec.push global_inst (ExtArray
+            { label = table; values = Array.to_list correspondence; elem_size = 8 });
+
+          (* Deduplicate possibilities and jump there *)
+          let possibilities =
+            Array.to_list correspondence |> Stringset.of_list |> Stringset.to_seq |> List.of_seq
+          in
+
+          Vec.push tac (JumpIndirect { rs = target; possibilities });
+          Vec.append tac tac_cases;);
         
         rd
       )
