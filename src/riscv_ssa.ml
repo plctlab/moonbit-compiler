@@ -250,9 +250,15 @@ let rec sizeof ty =
   | Mtype.T_constr id -> pointer_size
   | Mtype.T_fixedarray _ -> pointer_size
   | Mtype.T_trait _ -> pointer_size
-  (* | Mtype.T_optimized_option { elem } -> pointer_size  *)
+
+  (* Optimized option uses special values to indicate None for integer types *)
+  (* So the size is equal to the underlying integer type *)
+  | Mtype.T_optimized_option { elem } -> sizeof elem
+  
+  (* Same size as the underlying type *)
+  | Mtype.T_maybe_uninit x -> sizeof x
+  
   (* | Mtype.T_any { name } -> pointer_size  *)
-  (* | Mtype.T_maybe_uninit x -> sizeof x *)(*Same size as the contained type *)
   (* | Mtype.T_error_value_result { ok; err; id } -> sizeof ok + sizeof err + pointer_size *)
   | _ -> failwith ("riscv_ssa.ml: cannot calculate size for type: "^ Mtype.to_string ty)
 ;;
