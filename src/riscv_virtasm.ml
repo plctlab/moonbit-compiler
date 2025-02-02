@@ -379,8 +379,11 @@ module VBlock = struct
   type t =
     { body : Inst.t Vec.t
     ; term : Term.t (* Single Terminator*)
-    ; preds : VBlockLabel.t Vec.t (* Predecessors*)
+    ; preds : pred_t list (* Predecessors*)
     }
+  and pred_t = 
+    | NormalEdge of VBlockLabel.t
+    | LoopBackEdge of VBlockLabel.t
 
   let get_successors (block : t) : VBlockLabel.t list =
     match block.term with
@@ -418,7 +421,7 @@ module VProg = struct
     { blocks : VBlock.t VBlockMap.t
     ; funcs : VFunc.t VFuncMap.t
     ; consts : Imm.t VSymbolMap.t
-    ; loop_vars : Slot.t VBlockMap.t
+    ; loop_vars : SlotSet.t VBlockMap.t
       (* Loop internal variables - 
     used for register allocation special identification*)
     }
@@ -434,6 +437,18 @@ module VProg = struct
     | None -> failwith "get_func: function not found"
     | Some x -> x
   ;;
+
+  let get_loop_vars (vprog : t) (bl : VBlockLabel.t) : SlotSet.t =
+    match VBlockMap.find_opt vprog.loop_vars bl with
+    | None -> failwith "get_loop_vars: loop variable not found"
+    | Some x -> x
+
+  let empty : t =
+    { blocks = VBlockMap.empty
+    ; funcs = VFuncMap.empty
+    ; consts = VSymbolMap.empty
+    ; loop_vars = VBlockMap.empty
+    }
 end
 
 (* Note: *)

@@ -1,6 +1,24 @@
 open Riscv_reg
 open Riscv_virtasm
 
+(** Helper function: checks if an int is "not infinite" *)
+let not_inf (x : int) = x < max_int
+
+(** 
+  Helper function: saturating addition
+  Returns x + y if both are not max_int, otherwise returns max_int 
+*)
+let sat_add (x : int) (y : int) = if not_inf x && not_inf y then x + y else max_int
+
+(** 
+  Helper function: increment all values in map by one (with saturation)
+*)
+let incr_all_values_by_one (mp : int SlotMap.t) : int SlotMap.t =
+  SlotMap.fold mp SlotMap.empty (fun slot dist acc ->
+    let new_dist = sat_add dist 1 in
+    SlotMap.add acc slot new_dist)
+;;
+
 (** RPO, Reverse Postorder used for 
   RPO (Reverse Postorder) is an ordering of basic blocks in a control flow graph, 
   used to respect control flow during program analysis and optimization.
@@ -33,6 +51,8 @@ module RPO = struct
     | Some x -> x
     | None -> failwith "RPO.get_func_rpo: function not found"
   ;;
+
+  let empty : t = VFuncMap.empty
 end
 
 module Liveness = struct
@@ -54,6 +74,18 @@ module Liveness = struct
   *)
   type t = live_info VBlockMap.t
 
+  (* Empty*)
+  let empty_info : live_info =
+    { maxPressure_I = 0
+    ; maxPressure_F = 0
+    ; liveIn = SlotSet.empty
+    ; liveOut = SlotSet.empty
+    ; exitNextUse = SlotMap.empty
+    }
+  ;;
+
+  let empty : t = VBlockMap.empty
+
   (**
     Get live_info for a specific block.
     Returns default values or fails if block not found in map, depending on context
@@ -61,31 +93,7 @@ module Liveness = struct
   let get_liveinfo (liveness : t) (bl : VBlockLabel.t) : live_info =
     match VBlockMap.find_opt liveness bl with
     | Some x -> x
-    | None ->
-      { maxPressure_I = 0
-      ; maxPressure_F = 0
-      ; liveIn = SlotSet.empty
-      ; liveOut = SlotSet.empty
-      ; exitNextUse = SlotMap.empty
-      }
-  ;;
-
-  (** Helper function: checks if an int is "not infinite" *)
-  let not_inf (x : int) = x < max_int
-
-  (** 
-    Helper function: saturating addition
-    Returns x + y if both are not max_int, otherwise returns max_int 
-  *)
-  let sat_add (x : int) (y : int) = if not_inf x && not_inf y then x + y else max_int
-
-  (** 
-    Helper function: increment all values in map by one (with saturation)
-  *)
-  let incr_all_values_by_one (mp : int SlotMap.t) : int SlotMap.t =
-    SlotMap.fold mp SlotMap.empty (fun slot dist acc ->
-      let new_dist = sat_add dist 1 in
-      SlotMap.add acc slot new_dist)
+    | None -> empty_info
   ;;
 
   (**
@@ -138,7 +146,7 @@ module Liveness = struct
                let new_dist = sat_add dist_in_succ 1 in
                match SlotMap.find_opt !b_exitNextUse slot with
                | Some old_d ->
-               (* if old_d is less than new_dist, keep old_d as it's better; otherwise update *)
+                 (* if old_d is less than new_dist, keep old_d as it's better; otherwise update *)
                  if not_inf old_d && old_d <= new_dist
                  then ()
                  else b_exitNextUse := SlotMap.add !b_exitNextUse slot new_dist
@@ -226,8 +234,7 @@ module Liveness = struct
         then (
           changed := true;
           set_current_info bl new_info)
-        else
-          ()
+        else ()
       in
       List.iter process_block bls
     in
