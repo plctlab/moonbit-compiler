@@ -4,24 +4,21 @@ let outfile = Printf.sprintf "%s.deb" !Driver_config.Linkcore_Opt.output_file
 
 let debshow (x : string) : unit =
   (* Basic_io.write outfile x *)
-  print_endline @@ "[DEBUG]" ^ x
-;;
+  Printf.printf "[DEBUG] %s" x
 
 let debsexp (x : S.t) : unit =
   (* Basic_io.write_s outfile x *)
-  print_endline @@ "[DEBUG]" ^ S.to_string x
-;;
+  Printf.printf "[DEBUG] %s" (S.to_string x)
 
-let deblist (listn : string) (f : 'a -> string) (lst : 'a list) : unit =
+let deblist (list_name : string) (f : 'a -> string) (lst : 'a list) : unit =
   let list_str =
     lst
     |> List.map f (* Apply the function to each element *)
     |> String.concat "; " (* Concatenate the results with "; " *)
   in
-  print_endline @@ "[DEBUG] " ^ listn ^ ": [";
-  print_endline @@ "    " ^ list_str ^ ";";
-  print_endline @@ "]"
-;;
+  Printf.printf "[DEBUG] %s: [" list_name;
+  Printf.printf  "    %s;" list_str;
+  Printf.printf "]"
 
 (** Slot types for different operations (integer, floating-point, etc.) *)
 module Slots = struct
@@ -43,7 +40,7 @@ module Slots = struct
   type i_slot =
     { rd : Slot.t
     ; rs1 : Slot.t
-    ; imm : Imm.t
+    ; imm : int   (* We don't use Imm.t, because it must be a 12-bit integer *)
     }
 
   (** Defines a single floating-point register assignment with a destination register `frd`. *)
@@ -82,7 +79,7 @@ module Slots = struct
   (** Defines an assignment of a label (address or function) to a register `rd`.  *)
   type assign_label =
     { rd : Slot.t
-    ; label : Label.t
+    ; label : string
     }
 
   (**
@@ -116,7 +113,7 @@ module Slots = struct
   (** Calls function named `fn` with arguments `args`, and store the result in `rd`. *)
   type call_data =
     { rd : Slot.t
-    ; fn : Label.t
+    ; fn : string
     ; args : Slot.t list
     ; fargs : Slot.t list
     }
@@ -138,7 +135,7 @@ module Slots = struct
   type mem_slot =
     { rd : Slot.t
     ; base : Slot.t
-    ; offset : Imm.t
+    ; offset : int
     }
 
   type mem_fslot =
@@ -172,27 +169,66 @@ module Inst = struct
   type t =
     (* Integer Arithmetic Instructions *)
     | Add of r_slot
+    | Addu of r_slot
+    | Addw of r_slot
+    | Adduw of r_slot
+
     | Sub of r_slot
+    | Subu of r_slot
+    | Subw of r_slot
+    | Subuw of r_slot
+
+    | Mul of r_slot
+    | Mulw of r_slot
+    (* There is no `mulu` or `muluw`. *)
+
+    | Div of r_slot
+    | Divu of r_slot
+    | Divw of r_slot
+    | Divuw of r_slot
+
+    | Rem of r_slot
+    | Remu of r_slot
+    | Remw of r_slot
+    | Remuw of r_slot
+
+    | Slt of r_slot (* set less than *)
+    | Sltu of r_slot
+
     | Addi of i_slot
+    | Slti of i_slot
+    | Sltiu of i_slot
     (* Logical and Shift Instructions *)
     | And of r_slot
     | Or of r_slot
     | Xor of r_slot
+    
     | Sll of r_slot (* shift left logical *)
+    | Sllw of r_slot
+    
     | Srl of r_slot (* shift right logical *)
+    | Srlw of r_slot
+
     | Sra of r_slot (* shift right arithmetic *)
+    | Sraw of r_slot
+
+    | Zextw of assign_slot (* zero-extension to 64-bit *)
+    | Sextw of assign_slot (* signed-extension to 64-bit *)
+
+    | Andi of i_slot
+    | Ori  of i_slot
+    | Xori of i_slot
     | Slli of i_slot (* shift left logical immediate *)
     | Srli of i_slot (* shift right logical immediate *)
     | Srai of i_slot (* shift right arithmetic immediate *)
-    (* Multiplication and Division Instructions *)
-    | Mul of r_slot
-    | Div of r_slot (* signed divide *)
-    | Divu of r_slot (* unsigned divide *)
-    | Rem of r_slot (* signed remainder *)
-    | Remu of r_slot (* unsigned remainder *)
     (* Memory Access Instructions *)
+    | Lb of mem_slot (* load byte 8-bit *)
+    | Lh of mem_slot (* load half-word 16-bit *)
     | Lw of mem_slot (* load word 32-bit *)
     | Ld of mem_slot (* load doubleword 64-bit *)
+    
+    | Sb of mem_slot (* store byte 8-bit *)
+    | Sh of mem_slot (* store half-word 16-bit *)
     | Sw of mem_slot (* store word 32-bit *)
     | Sd of mem_slot (* store doubleword 64-bit *)
     (* Floating-Point Arithmetic Instructions *)
@@ -239,22 +275,25 @@ module Inst = struct
 
   let inst_map (inst : t) (rd : Slot.t -> Slot.t list) (rs : Slot.t -> Slot.t list) =
     match inst with
-    | Add r_slot
-    | Sub r_slot
-    | And r_slot
-    | Or r_slot
-    | Xor r_slot
-    | Sll r_slot
-    | Srl r_slot
-    | Sra r_slot
-    | Mul r_slot
-    | Div r_slot
-    | Divu r_slot
-    | Rem r_slot
-    | Remu r_slot -> rd r_slot.rd @ rs r_slot.rs1 @ rs r_slot.rs2
-    | Addi i_slot | Slli i_slot | Srli i_slot | Srai i_slot ->
+    | Add r_slot | Addu r_slot | Addw r_slot | Adduw r_slot
+    | Sub r_slot | Subu r_slot | Subw r_slot | Subuw r_slot
+    | And r_slot | Or r_slot   | Xor r_slot
+    | Sll r_slot | Sllw r_slot
+    | Srl r_slot | Srlw r_slot
+    | Sra r_slot | Sraw r_slot
+    | Mul r_slot | Mulw r_slot
+    | Div r_slot | Divu r_slot | Divw r_slot | Divuw r_slot
+    | Rem r_slot | Remu r_slot | Remw r_slot | Remuw r_slot
+    | Slt r_slot | Sltu r_slot
+      -> rd r_slot.rd @ rs r_slot.rs1 @ rs r_slot.rs2
+    | Zextw a_slot | Sextw a_slot
+      -> rd a_slot.rd @ rs a_slot.rs
+    | Andi i_slot | Ori  i_slot | Xori i_slot 
+    | Addi i_slot | Slli i_slot | Srli i_slot | Srai i_slot
+    | Slti i_slot | Sltiu i_slot ->
       rd i_slot.rd @ rs i_slot.rs1
-    | Lw mem_slot | Ld mem_slot | Sw mem_slot | Sd mem_slot ->
+    | Lb mem_slot | Lh mem_slot | Lw mem_slot | Ld mem_slot
+    | Sb mem_slot | Sh mem_slot | Sw mem_slot | Sd mem_slot ->
       rd mem_slot.rd @ rs mem_slot.base
     | FaddD r_fslot | FsubD r_fslot | FmulD r_fslot | FdivD r_fslot ->
       rd r_fslot.frd @ rs r_fslot.frs1 @ rs r_fslot.frs2
@@ -301,23 +340,6 @@ end
 (* Vector alias*)
 module Vec = Basic_vec
 
-(* VBlock *)
-module VBlockLabel = Label
-module VBlockSet = Label.Hashset
-module VBlockMap = Label.Map
-
-(* VFunc *)
-module VFuncLabel = Label
-module VFuncSet = Label.Hashset
-module VFuncMap = Label.Map
-
-(* VProg *)
-
-(* VSymbol *)
-module VSymbolLabel = Label
-module VSymbolSet = Label.Hashset
-module VSymbolMap = Label.Map
-
 (** Control Flow module *)
 module Term = struct
   open Slots
@@ -326,14 +348,14 @@ module Term = struct
   type branch_slot =
     { rs1 : Slot.t
     ; rs2 : Slot.t
-    ; ifso : VBlockLabel.t
-    ; ifnot : VBlockLabel.t
+    ; ifso : string
+    ; ifnot : string
     }
 
   (** rd stores return address, label is the jump target *)
   type jal_label =
     { rd : Slot.t
-    ; label : VBlockLabel.t
+    ; label : string
     }
 
   (** jump address is calculated by rs1 + offset, rd stores return address *)
@@ -351,12 +373,12 @@ module Term = struct
     | Bge of branch_slot (* Branch if greater than or equal *)
     | Bltu of branch_slot (* Branch if less than unsigned *)
     | Bgeu of branch_slot (* Branch if greater than or equal unsigned *)
-    | J of VBlockLabel.t (* jump (not stort return address) *)
-    | Jal of VBlockLabel.t (* jump and link (store return address) *)
+    | J of string (* jump (not stort return address) *)
+    | Jal of string (* jump and link (store return address) *)
     | Jalr of jalr_label (* jump and link register (store return address) *)
     | TailCall of call_data
     | TailCallIndirect of call_indirect
-    | Ret of Slot.t (* Unit for no return*)
+    | Ret of Slot.t (* Unit for no return *)
 
   let get_srcs (term : t) : Slot.t list =
     match term with
@@ -378,11 +400,11 @@ end
 module VBlock = struct
   type t =
     { body : Inst.t Vec.t
-    ; term : Term.t (* Single Terminator*)
-    ; preds : VBlockLabel.t Vec.t (* Predecessors*)
+    ; term : Term.t (* Instruction that terminates this block *)
+    ; preds : string Vec.t (* Predecessors *)
     }
 
-  let get_successors (block : t) : VBlockLabel.t list =
+  let get_successors (block : t) : string list =
     match block.term with
     | Beq branch_slot
     | Bne branch_slot
@@ -405,32 +427,32 @@ end
 (** VirtRvFunc*)
 module VFunc = struct
   type t =
-    { funn : VFuncLabel.t
+    { funn : string
     ; args : Slot.t list
     ; fargs : Slot.t list
-    ; entry : VBlockLabel.t
+    ; entry : string
     }
 end
 
 (** VirtRvProg*)
 module VProg = struct
   type t =
-    { blocks : VBlock.t VBlockMap.t
-    ; funcs : VFunc.t VFuncMap.t
-    ; consts : Imm.t VSymbolMap.t
-    ; loop_vars : Slot.t VBlockMap.t
+    { blocks : (string, VBlock.t) Hashtbl.t
+    ; funcs : (string, VFunc.t) Hashtbl.t
+    ; consts : (string, Imm.t) Hashtbl.t
+    ; loop_vars : (string, Slot.t) Hashtbl.t
       (* Loop internal variables - 
     used for register allocation special identification*)
     }
 
-  let get_block (vprog : t) (bl : VBlockLabel.t) : VBlock.t =
-    match VBlockMap.find_opt vprog.blocks bl with
+  let get_block (vprog : t) (bl : string) : VBlock.t =
+    match Hashtbl.find_opt vprog.blocks bl with
     | None -> failwith "get_block: block not found"
     | Some x -> x
   ;;
 
-  let get_func (vprog : t) (fn : VFuncLabel.t) : VFunc.t =
-    match VFuncMap.find_opt vprog.funcs fn with
+  let get_func (vprog : t) (fn : string) : VFunc.t =
+    match Hashtbl.find_opt vprog.funcs fn with
     | None -> failwith "get_func: function not found"
     | Some x -> x
   ;;
