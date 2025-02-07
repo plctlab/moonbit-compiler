@@ -6,30 +6,33 @@ open Riscv_virtasm
   used to respect control flow during program analysis and optimization.
 *)
 module RPO = struct
-  type t = VBlockLabel.t list VFuncMap.t
+  (** From a function name to its blocks, in RPO order *)
+  type t = (string, string list) Hashtbl.t
 
   let calculate_rpo (vprog : VProg.t) =
-    let visited = VBlockSet.create 128 in
-    let cal_func_rpo (funn : VFuncLabel.t) (func : VFunc.t) (acc : t) : t =
+    let visited = Hashtbl.create 128 in
+    let result = Hashtbl.create 128 in
+    let cal_func_rpo (funn : string) (func : VFunc.t) =
       let order = Vec.empty () in
-      let rec dfs (bl : VBlockLabel.t) =
-        if VBlockSet.mem visited bl
+      let rec dfs bl =
+        if Hashtbl.mem visited bl
         then ()
         else (
-          VBlockSet.add visited bl;
+          Hashtbl.add visited bl ();
           let block = VProg.get_block vprog bl in
           let succs = VBlock.get_successors block in
           List.iter dfs succs;
           Vec.push order bl)
       in
       dfs func.entry;
-      order |> Vec.to_list |> List.rev |> VFuncMap.add acc funn
+      order |> Vec.to_list |> List.rev |> Hashtbl.add result funn
     in
-    VFuncMap.fold vprog.funcs VFuncMap.empty cal_func_rpo
+    Hashtbl.iter cal_func_rpo vprog.funcs;
+    result 
   ;;
 
-  let get_func_rpo (funn : VFuncLabel.t) (rpo : t) : VBlockLabel.t list =
-    match VFuncMap.find_opt rpo funn with
+  let get_func_rpo (funn : string) (rpo : t) : string list =
+    match Hashtbl.find_opt rpo funn with
     | Some x -> x
     | None -> failwith "RPO.get_func_rpo: function not found"
   ;;
@@ -52,14 +55,14 @@ module Liveness = struct
     Liveness information for all basic blocks in the program.
     VBlockMap maps VBlockLabel.t to live_info
   *)
-  type t = live_info VBlockMap.t
+  type t = (string, live_info) Hashtbl.t
 
   (**
     Get live_info for a specific block.
     Returns default values or fails if block not found in map, depending on context
   *)
-  let get_liveinfo (liveness : t) (bl : VBlockLabel.t) : live_info =
-    match VBlockMap.find_opt liveness bl with
+  let get_liveinfo (liveness : t) (bl : string) : live_info =
+    match Hashtbl.find_opt liveness bl with
     | Some x -> x
     | None ->
       { maxPressure_I = 0
@@ -107,19 +110,19 @@ module Liveness = struct
   *)
   let liveness_analysis (vprog : VProg.t) (rpo : RPO.t) : t =
     (* Reference to store analysis results for all blocks, updated in each iteration *)
-    let liveness_ref : t ref = ref VBlockMap.empty in
+    let liveness_ref : t = Hashtbl.create 128 in
     (* Returns current live_info for specified block (default if not exists) *)
-    let get_current_info (bl : VBlockLabel.t) : live_info =
-      get_liveinfo !liveness_ref bl
+    let get_current_info (bl : string) : live_info =
+      get_liveinfo liveness_ref bl
     in
     (* Sets or updates live_info for a block *)
-    let set_current_info (bl : VBlockLabel.t) (info : live_info) =
-      liveness_ref := VBlockMap.add !liveness_ref bl info
+    let set_current_info (bl : string) (info : live_info) =
+      Hashtbl.add liveness_ref bl info
     in
     let changed = ref true in
     (* Scan all basic blocks within a function f *)
-    let cal_func (f_label : VFuncLabel.t) (bls : VBlockLabel.t list) =
-      let process_block (bl : VBlockLabel.t) =
+    let cal_func (f_label : string) (bls : string list) =
+      let process_block bl =
         let block = VProg.get_block vprog bl in
         let old_info = get_current_info bl in
         (**********************************************************)
@@ -234,9 +237,9 @@ module Liveness = struct
     (* Outer loop: continue until no changes occur *)
     while !changed do
       changed := false;
-      VFuncMap.iter rpo (fun fun_lbl block_list -> cal_func fun_lbl block_list)
+      Hashtbl.iter (fun fun_lbl block_list -> cal_func fun_lbl block_list) rpo
     done;
     (* final liveness analysis results for the entire program *)
-    !liveness_ref
-  ;;
+    liveness_ref
+
 end

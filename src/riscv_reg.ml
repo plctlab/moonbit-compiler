@@ -154,13 +154,18 @@ Defines an immediate value type.
 Immediate values can either be an integer (`IntImm`) or a floating-point number (`FloatImm`).
 *)
 module Imm = struct
+  (* Note that IntImm and Int64Imm will be translated to the same instruction `li`. *)
+  (* We distinguish them because we currently only do optimizations on `int`, *)
+  (* and operations of int64 are too verbose. *)
   type t =
     | IntImm of int (* Integer immediate value *)
+    | Int64Imm of int64
     | FloatImm of float (* Floating-point immediate value *)
 
   let to_string imm =
     match imm with
     | IntImm i -> string_of_int i
+    | Int64Imm i -> Int64.to_string i
     | FloatImm f -> string_of_float f
   ;;
 end
