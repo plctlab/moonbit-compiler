@@ -387,7 +387,7 @@ module Term = struct
     | J _ | Jal _ -> []
   ;;
 
-  (* 为了函数接口统一，如下函数仍然保留*)
+  (* Keep these functions for API consistency *)
   let get_dests (term : t) : Slot.t list = []
   let adjust_rec_alloc_I (term : t) (pre_K : int) : int = pre_K
   let adjust_rec_alloc_F (term : t) (pre_K : int) : int = pre_K
