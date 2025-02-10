@@ -72,6 +72,14 @@ module Reg = struct
     | T5 -> "t5"
     | T6 -> "t6"
   ;;
+
+  (* Reg寄存器最大可分配数量*)
+  let k = 32
+
+  (* 用于调用者保存寄存器*)
+  let caller_saved_regs =
+    [ Ra; T0; T1; T2; A0; A1; A2; A3; A4; A5; A6; A7; T3; T4; T5; T6 ]
+  ;;
 end
 
 (* Module for floating-point registers (freg_t) *)
@@ -145,6 +153,12 @@ module FReg = struct
     | Ft9 -> "ft9"
     | Ft10 -> "ft10"
     | Ft11 -> "ft11"
+  ;;
+
+  let k = 32
+
+  let caller_saved_fregs =
+    [ Ft0; Ft1; Ft2; Ft3; Fa0; Fa1; Fa2; Fa3; Fa4; Fa5; Fa6; Fa7; Ft8; Ft9; Ft10; Ft11 ]
   ;;
 end
 
@@ -252,6 +266,18 @@ module SlotSet = struct
       (* 3. Check if each element in s1 exists in s2 *)
       for_all s1 (fun x -> mem s2 x)
   ;;
+
+  (* Function to split the SlotSet into two sets based on Slot and FSlot *)
+  let split_vars (vars : t) : t * t =
+    let slot_set = ref empty in
+    let fslot_set = ref empty in
+    iter vars (fun s ->
+      match s with
+      | Slot _ | Reg _ -> slot_set := add !slot_set s
+      | FSlot _ | FReg _ -> fslot_set := add !fslot_set s
+      | _ -> ());
+    !slot_set, !fslot_set
+  ;;
 end
 
 module SlotMap = struct
@@ -285,5 +311,17 @@ module SlotMap = struct
         true
       with
       | Exit -> false)
+  ;;
+
+  (* Function to split the SlotMap into two maps based on Reg and FReg *)
+  let split_vars (vars : 'a t) : 'a t * 'a t =
+    let reg_map = ref empty in
+    let freg_map = ref empty in
+    iter vars (fun k v ->
+      match k with
+      | Slot _ | Reg _ -> reg_map := add !reg_map k v
+      | FSlot _ | FReg _ -> freg_map := add !freg_map k v
+      | _ -> ());
+    !reg_map, !freg_map
   ;;
 end

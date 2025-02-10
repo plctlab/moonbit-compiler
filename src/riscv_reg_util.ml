@@ -19,6 +19,14 @@ let incr_all_values_by_one (mp : int SlotMap.t) : int SlotMap.t =
     SlotMap.add acc slot new_dist)
 ;;
 
+let remove_all_values_list (mp : int SlotMap.t) (slots : Slot.t list) : int SlotMap.t =
+  List.fold_left (fun acc slot -> SlotMap.remove acc slot) mp slots 
+;;
+
+let reset_all_values_list (mp : int SlotMap.t) (slots : Slot.t list) : int SlotMap.t =
+  List.fold_left (fun acc slot -> SlotMap.add acc slot 0) mp slots
+;;
+
 (** RPO, Reverse Postorder used for 
   RPO (Reverse Postorder) is an ordering of basic blocks in a control flow graph, 
   used to respect control flow during program analysis and optimization.

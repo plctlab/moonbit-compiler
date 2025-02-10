@@ -296,6 +296,20 @@ module Inst = struct
 
   let get_srcs (inst : t) : Slot.t list = inst_map inst (fun x -> []) (fun x -> [ x ])
   let get_dests (inst : t) : Slot.t list = inst_map inst (fun x -> [ x ]) (fun x -> [])
+  let generate_reload (var : Slot.t) : t = Reload { target = var; origin = var }
+  let generate_spill (var : Slot.t) : t = Spill { target = var; origin = var }
+
+  let adjust_rec_alloc_I (inst : t) (pre_K : int) : int =
+    match inst with
+    | Call _ | CallIndirect _ -> pre_K - List.length Reg.caller_saved_regs
+    | _ -> pre_K
+  ;;
+
+  let adjust_rec_alloc_F (inst : t) (pre_K : int) : int =
+    match inst with
+    | Call _ | CallIndirect _ -> pre_K - List.length FReg.caller_saved_fregs
+    | _ -> pre_K
+  ;;
 end
 
 (* Vector alias*)
@@ -372,6 +386,11 @@ module Term = struct
     | Ret _ -> []
     | J _ | Jal _ -> []
   ;;
+
+  (* 为了函数接口统一，如下函数仍然保留*)
+  let get_dests (term : t) : Slot.t list = []
+  let adjust_rec_alloc_I (term : t) (pre_K : int) : int = pre_K
+  let adjust_rec_alloc_F (term : t) (pre_K : int) : int = pre_K
 end
 
 (** VirtRvBlock*)
@@ -381,9 +400,23 @@ module VBlock = struct
     ; term : Term.t (* Single Terminator*)
     ; preds : pred_t list (* Predecessors*)
     }
-  and pred_t = 
+
+  and pred_t =
     | NormalEdge of VBlockLabel.t
     | LoopBackEdge of VBlockLabel.t
+
+  let get_preds (block : t) : VBlockLabel.t list =
+    List.map
+      (fun pred ->
+         match pred with
+         | NormalEdge pred_bl | LoopBackEdge pred_bl -> pred_bl)
+      block.preds
+  ;;
+
+  let get_pred (edge : pred_t) : VBlockLabel.t =
+    match edge with
+    | NormalEdge pred_bl | LoopBackEdge pred_bl -> pred_bl
+  ;;
 
   let get_successors (block : t) : VBlockLabel.t list =
     match block.term with
@@ -442,6 +475,7 @@ module VProg = struct
     match VBlockMap.find_opt vprog.loop_vars bl with
     | None -> failwith "get_loop_vars: loop variable not found"
     | Some x -> x
+  ;;
 
   let empty : t =
     { blocks = VBlockMap.empty
@@ -449,6 +483,7 @@ module VProg = struct
     ; consts = VSymbolMap.empty
     ; loop_vars = VBlockMap.empty
     }
+  ;;
 end
 
 (* Note: *)
