@@ -4,13 +4,11 @@ let outfile = Printf.sprintf "%s.deb" !Driver_config.Linkcore_Opt.output_file
 
 let debshow (x : string) : unit =
   (* Basic_io.write outfile x *)
-  print_endline @@ "[DEBUG]" ^ x
-;;
+  Printf.printf "[DEBUG] %s\n" x
 
 let debsexp (x : S.t) : unit =
   (* Basic_io.write_s outfile x *)
-  print_endline @@ "[DEBUG]" ^ S.to_string x
-;;
+  Printf.printf "[DEBUG] %s\n" (S.to_string x)
 
 let deblist (listn : string) (f : 'a -> string) (lst : 'a list) : unit =
   let list_str =
@@ -18,10 +16,7 @@ let deblist (listn : string) (f : 'a -> string) (lst : 'a list) : unit =
     |> List.map f (* Apply the function to each element *)
     |> String.concat "; " (* Concatenate the results with "; " *)
   in
-  print_endline @@ "[DEBUG] " ^ listn ^ ": [";
-  print_endline @@ "    " ^ list_str ^ ";";
-  print_endline @@ "]"
-;;
+  Printf.printf "[DEBUG] %s: [\n\t%s\n]\n" listn list_str
 
 (** Slot types for different operations (integer, floating-point, etc.) *)
 module Slots = struct
@@ -116,7 +111,7 @@ module Slots = struct
   (** Calls function named `fn` with arguments `args`, and store the result in `rd`. *)
   type call_data =
     { rd : Slot.t
-    ; fn : Label.t
+    ; fn : Label.t (* Use a stamp of -1 for libc functions. *)
     ; args : Slot.t list
     ; fargs : Slot.t list
     }
@@ -163,6 +158,11 @@ module Slots = struct
     { target : Slot.t
     ; origin : Slot.t
     }
+
+  type alloca =
+    { rd: Slot.t
+    ; size: int
+    }
 end
 
 (** Virtual RISC-V Instructions *)
@@ -173,16 +173,14 @@ module Inst = struct
     (* Integer Arithmetic Instructions *)
     | Add of r_slot
     | Addw of r_slot
-    | Addu of r_slot
-    | Adduw of r_slot
 
     | Sub of r_slot
-    | Subw of r_slot
-    | Subu of r_slot
-    | Subuw of r_slot
-    
+    | Subw of r_slot (* signed/unsigned are the same for add/sub *)
+
+    (* signed/unsigned only matters for bits 127-64 in mul *)
+    (* which we don't care. *)
     | Mul of r_slot
-    | Mulw of r_slot
+    | Mulw of r_slot 
 
     | Div of r_slot (* signed divide *)
     | Divw of r_slot
@@ -270,7 +268,6 @@ module Inst = struct
     (* Movement Instructions *)
     | La of assign_label (* load address *)
     | Li of assign_int64 (* load immediate *)
-    | Neg of assign_slot
     | Mv of assign_slot
     | FnegD of assign_fslot
     | FmvD of assign_fslot
@@ -284,25 +281,31 @@ module Inst = struct
     | Reload of stack_slot
     | FSpill of stack_fslot
     | FReload of stack_fslot
+    (* Stack Allocation Directive *)
+    | Alloca of alloca
 
   let inst_map (inst : t) (rd : Slot.t -> Slot.t list) (rs : Slot.t -> Slot.t list) =
     match inst with
-    | Add r_slot
-    | Sub r_slot
-    | And r_slot
-    | Or r_slot
-    | Xor r_slot
-    | Sll r_slot
-    | Srl r_slot
-    | Sra r_slot
-    | Mul r_slot
-    | Div r_slot
-    | Divu r_slot
-    | Rem r_slot
-    | Remu r_slot -> rd r_slot.rd @ rs r_slot.rs1 @ rs r_slot.rs2
-    | Addi i_slot | Slli i_slot | Srli i_slot | Srai i_slot ->
+    | Add r_slot | Addw r_slot
+    | Sub r_slot | Subw r_slot
+    | And r_slot | Or r_slot   | Xor r_slot
+    | Sll r_slot | Sllw r_slot
+    | Srl r_slot | Srlw r_slot
+    | Sra r_slot | Sraw r_slot
+    | Mul r_slot | Mulw r_slot
+    | Div r_slot | Divw r_slot | Divu r_slot | Divuw r_slot
+    | Rem r_slot | Remw r_slot | Remu r_slot | Remuw r_slot
+    | Slt r_slot | Sltw r_slot | Sltu r_slot | Sltuw r_slot
+    -> rd r_slot.rd @ rs r_slot.rs1 @ rs r_slot.rs2
+
+    | Addi i_slot | Slli i_slot | Srli i_slot | Srai i_slot
+    | Andi i_slot | Xori i_slot | Slti i_slot | Ori i_slot
+    | Addiw i_slot| Slliw i_slot| Srliw i_slot| Sltiw i_slot
+    | Sraiw i_slot ->
       rd i_slot.rd @ rs i_slot.rs1
-    | Lw mem_slot | Ld mem_slot | Sw mem_slot | Sd mem_slot ->
+    | Lb mem_slot | Lh mem_slot | Lw mem_slot | Ld mem_slot
+    | Lbu mem_slot| Lhu mem_slot
+    | Sb mem_slot | Sh mem_slot | Sw mem_slot | Sd mem_slot ->
       rd mem_slot.rd @ rs mem_slot.base
     | FaddD r_fslot | FsubD r_fslot | FmulD r_fslot | FdivD r_fslot ->
       rd r_fslot.frd @ rs r_fslot.frs1 @ rs r_fslot.frs2
@@ -325,7 +328,8 @@ module Inst = struct
     | Fld mem_fslot | Fsd mem_fslot -> rd mem_fslot.frd @ rs mem_fslot.base
     | La assign_label -> []
     | Li assign_int64 -> []
-    | Neg assign_slot | Mv assign_slot -> rd assign_slot.rd @ rs assign_slot.rs
+    | Mv assign_slot | Sextw assign_slot | Zextw assign_slot ->
+      rd assign_slot.rd @ rs assign_slot.rs
     | FmvDX assign_direct -> rd assign_direct.frd @ rs assign_direct.rs
     | FmvDXZero single_fslot -> []
     | Call call_data ->
@@ -340,6 +344,7 @@ module Inst = struct
     | Spill stack_slot | Reload stack_slot -> rd stack_slot.target @ rs stack_slot.origin
     | FSpill stack_fslot | FReload stack_fslot ->
       rd stack_fslot.target @ rs stack_fslot.origin
+    | Alloca alloca -> rd alloca.rd
   ;;
 
   let get_srcs (inst : t) : Slot.t list = inst_map inst (fun x -> []) (fun x -> [ x ])
@@ -357,7 +362,95 @@ module Inst = struct
     match inst with
     | Call _ | CallIndirect _ -> pre_K - List.length FReg.caller_saved_fregs
     | _ -> pre_K
-  ;;
+  
+  let to_string x =
+    let s = Slot.to_string in
+    let rtype t (r: Slots.r_slot) = 
+      Printf.sprintf "%s %s, %s, %s" t (s r.rd) (s r.rs1) (s r.rs2)
+    in
+    let itype t (i: Slots.i_slot) = 
+      Printf.sprintf "%s %s, %s, %d" t (s i.rd) (s i.rs1) i.imm
+    in
+    let mem t (m: Slots.mem_slot) =
+      Printf.sprintf "%s %s, %d(%s)" t (s m.rd) m.offset (s m.base)
+    in
+    match x with
+    | Add r -> rtype "add" r
+    | Addw r -> rtype "addw" r
+    | Sub r -> rtype "sub" r
+    | Subw r -> rtype "subw" r
+    | Mul r -> rtype "mul" r
+    | Mulw r -> rtype "mulw" r
+    | Div r -> rtype "div" r
+    | Divw r -> rtype "divw" r
+    | Divu r -> rtype "divu" r
+    | Divuw r -> rtype "divuw" r
+    | Rem r -> rtype "rem" r
+    | Remw r -> rtype "remw" r
+    | Remu r -> rtype "remu" r
+    | Remuw r -> rtype "remuw" r
+    | Sll r -> rtype "sll" r
+    | Sllw r -> rtype "sllw" r
+    | Srl r -> rtype "srl" r
+    | Srlw r -> rtype "srlw" r
+    | Sra r -> rtype "sra" r
+    | Sraw r -> rtype "sraw" r
+    | Slt r -> rtype "slt" r
+    | Sltw r -> rtype "sltw" r
+    | Sltu r -> rtype "sltu" r
+    | Sltuw r -> rtype "sltuw" r
+    | And r -> rtype "and" r
+    | Or r -> rtype "or" r
+    | Xor r -> rtype "xor" r
+
+    | Addi i -> itype "addi" i
+    | Addiw i -> itype "addiw" i
+    | Andi i -> itype "andi" i
+    | Ori i -> itype "ori" i
+    | Xori i -> itype "xori" i
+    | Slti i -> itype "slti" i
+    | Sltiw i -> itype "sltiw" i
+    | Srai i -> itype "srai" i
+    | Srli i -> itype "srli" i
+    | Slli i -> itype "slli" i
+    | Sraiw i -> itype "sraiw" i
+    | Srliw i -> itype "srliw" i
+    | Slliw i -> itype "slliw" i
+
+    | Lb m -> mem "lb" m
+    | Lh m -> mem "lh" m
+    | Lw m -> mem "lw" m
+    | Ld m -> mem "ld" m
+    | Lbu m -> mem "lbu" m
+    | Lhu m -> mem "lhu" m
+
+    | Sb m -> mem "sb" m
+    | Sh m -> mem "sh" m
+    | Sw m -> mem "sw" m
+    | Sd m -> mem "sd" m
+
+    | Call { rd; fn; args; fargs } ->
+        let args_list = String.concat ", " (List.map s args) in
+        let fargs_list = String.concat ", " (List.map s fargs) in
+        Printf.sprintf "call %s, %s(%s; %s)" (s rd) fn.name args_list fargs_list
+
+    | CallIndirect { rd; fn; args; fargs } ->
+        let args_list = String.concat " " (List.map s args) in
+        let fargs_list = String.concat ", " (List.map s fargs) in
+        Printf.sprintf "jr %s, %s(%s; %s)" (s rd) (s fn) args_list fargs_list
+
+    | Li { rd; imm } ->
+        (match imm with
+        | IntImm x -> Printf.sprintf "li %s, %d" (s rd) x
+        | Int64Imm x -> Printf.sprintf "li %s, %s" (s rd) (Int64.to_string x)
+        | FloatImm x -> Printf.sprintf "li %s, %f" (s rd) x)
+
+    | La { rd; label } -> Printf.sprintf "la %s, %s" (s rd) label.name
+    | Mv { rd; rs } -> Printf.sprintf "mv %s, %s" (s rd) (s rs)
+    | Sextw { rd; rs } -> Printf.sprintf "sext.w %s, %s" (s rd) (s rs)
+    | Zextw { rd; rs } -> Printf.sprintf "zext.w %s, %s" (s rd) (s rs)
+    | Alloca { rd; size } -> Printf.sprintf "alloca %s, %d" (s rd) size
+    | _ -> failwith "riscv_virtasm.ml: unsupported"
 end
 
 (* Vector alias*)
@@ -402,7 +495,7 @@ module Term = struct
   type jalr_label =
     { rd : Slot.t
     ; rs1 : Slot.t
-    ; offset : Imm.t
+    ; offset : int
     }
 
   (** These include conditional branches, unconditional jumps, function returns, and tail calls.  *)
@@ -439,6 +532,32 @@ module Term = struct
   let get_dests (term : t) : Slot.t list = []
   let adjust_rec_alloc_I (term : t) (pre_K : int) : int = pre_K
   let adjust_rec_alloc_F (term : t) (pre_K : int) : int = pre_K
+
+  let to_string t =
+    let s = Slot.to_string in
+    let branch t { rs1; rs2; ifso; ifnot } =
+      Printf.sprintf "%s %s, %s, %s, %s" t (s rs1) (s rs2) ifso.name ifnot.name
+    in
+    match t with
+    | Beq b -> branch "beq" b
+    | Bne b -> branch "bne" b
+    | Blt b -> branch "blt" b
+    | Bge b -> branch "bge" b
+    | Bltu b -> branch "bltu" b
+    | Bgeu b -> branch "bgeu" b
+    | J label -> Printf.sprintf "j %s" label.name
+    | Jal label -> Printf.sprintf "jal %s" label.name
+    | Jalr { rd; rs1; offset } -> Printf.sprintf "jalr %s %d(%s)" (s rd) offset (s rs1)
+    | Ret ret -> Printf.sprintf "return %s" (s ret)
+    | TailCall { rd; fn; args; fargs } ->
+        let args_list = String.concat ", " (List.map s args) in
+        let fargs_list = String.concat ", " (List.map s fargs) in
+        Printf.sprintf "call.tail %s, %s(%s; %s)" (s rd) fn.name args_list fargs_list
+
+    | TailCallIndirect { rd; fn; args; fargs } ->
+        let args_list = String.concat " " (List.map s args) in
+        let fargs_list = String.concat ", " (List.map s fargs) in
+        Printf.sprintf "jr.tail %s, %s(%s; %s)" (s rd) (s fn) args_list fargs_list
 end
 
 (** VirtRvBlock*)
