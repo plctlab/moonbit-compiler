@@ -170,6 +170,7 @@ Immediate values can either be an integer (`IntImm`) or a floating-point number 
 module Imm = struct
   type t =
     | IntImm of int (* Integer immediate value *)
+    | Int64Imm of int64
     | FloatImm of float (* Floating-point immediate value *)
 
   let to_string imm =
