@@ -43,7 +43,7 @@ module Slots = struct
   type i_slot =
     { rd : Slot.t
     ; rs1 : Slot.t
-    ; imm : Imm.t
+    ; imm : int
     }
 
   (** Defines a single floating-point register assignment with a destination register `frd`. *)
@@ -138,13 +138,13 @@ module Slots = struct
   type mem_slot =
     { rd : Slot.t
     ; base : Slot.t
-    ; offset : Imm.t
+    ; offset : int
     }
 
   type mem_fslot =
     { frd : Slot.t
     ; base : Slot.t
-    ; offset : Imm.t
+    ; offset : int
     }
 
   (**
@@ -172,27 +172,75 @@ module Inst = struct
   type t =
     (* Integer Arithmetic Instructions *)
     | Add of r_slot
+    | Addw of r_slot
+    | Addu of r_slot
+    | Adduw of r_slot
+
     | Sub of r_slot
+    | Subw of r_slot
+    | Subu of r_slot
+    | Subuw of r_slot
+    
+    | Mul of r_slot
+    | Mulw of r_slot
+
+    | Div of r_slot (* signed divide *)
+    | Divw of r_slot
+    | Divu of r_slot (* unsigned divide *)
+    | Divuw of r_slot
+
+    | Rem of r_slot (* signed remainder *)
+    | Remw of r_slot
+    | Remu of r_slot (* unsigned remainder *)
+    | Remuw of r_slot
+
+    | Sextw of assign_slot (* signed extend *)
+    | Zextw of assign_slot (* unsigned extend *)
+
     | Addi of i_slot
+    | Addiw of i_slot
     (* Logical and Shift Instructions *)
     | And of r_slot
     | Or of r_slot
     | Xor of r_slot
+
+    | Andi of i_slot
+    | Ori of i_slot
+    | Xori of i_slot
+
+    | Slt of r_slot (* set less than *)
+    | Sltw of r_slot
+    | Sltu of r_slot
+    | Sltuw of r_slot
+
     | Sll of r_slot (* shift left logical *)
+    | Sllw of r_slot
+
     | Srl of r_slot (* shift right logical *)
+    | Srlw of r_slot
+
     | Sra of r_slot (* shift right arithmetic *)
+    | Sraw of r_slot
+
     | Slli of i_slot (* shift left logical immediate *)
+    | Slliw of i_slot
     | Srli of i_slot (* shift right logical immediate *)
+    | Srliw of i_slot
     | Srai of i_slot (* shift right arithmetic immediate *)
+    | Sraiw of i_slot
+    | Slti of i_slot
+    | Sltiw of i_slot
     (* Multiplication and Division Instructions *)
-    | Mul of r_slot
-    | Div of r_slot (* signed divide *)
-    | Divu of r_slot (* unsigned divide *)
-    | Rem of r_slot (* signed remainder *)
-    | Remu of r_slot (* unsigned remainder *)
     (* Memory Access Instructions *)
+    | Lb of mem_slot
+    | Lbu of mem_slot
+    | Lh of mem_slot
+    | Lhu of mem_slot
     | Lw of mem_slot (* load word 32-bit *)
     | Ld of mem_slot (* load doubleword 64-bit *)
+
+    | Sb of mem_slot
+    | Sh of mem_slot
     | Sw of mem_slot (* store word 32-bit *)
     | Sd of mem_slot (* store doubleword 64-bit *)
     (* Floating-Point Arithmetic Instructions *)
