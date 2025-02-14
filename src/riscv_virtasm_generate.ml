@@ -358,7 +358,14 @@ let gen_fn (f: fn) =
     Hashtbl.add vblocks x {
       body; term = !term; preds =
         Vec.to_list block.pred
-        |> List.map (fun x -> VBlock.NormalEdge (label_of x))
+        |> List.map (fun pred ->
+          (* The labels are fixed for loops in `riscv_generate.ml`. *)
+          if String.starts_with ~prefix:"loophead_" x
+            && not (String.starts_with ~prefix:"loopbefore_" pred) then
+            VBlock.LoopBackEdge (label_of x)
+          else
+            VBlock.NormalEdge (label_of pred)
+        )
     }
   ) blocks;
   ()
@@ -375,13 +382,13 @@ let virtasm_of_ssa (ssa : Riscv_ssa.t list) =
   | ExtArray arr -> gen_extarr arr
   | _ -> failwith "riscv_virtasm_generate.ml: bad toplevel SSA") ssa;
   
-  let funcs = Label.Map.add_list (
+  let funcs = Label.Map.of_list (
     Vec.to_list vfuncs |> List.map (fun (x: VFunc.t) -> (x.funn, x))
-  ) Label.Map.empty in
+  ) in
 
-  let blocks = Label.Map.add_list (
+  let blocks = Label.Map.of_list (
     Hashtbl.to_seq vblocks |> List.of_seq |> List.map (fun (k, v) -> (label_of k, v))
-  ) Label.Map.empty in
+  ) in
 
   
   let out = Printf.sprintf "%s.vasm" !Driver_config.Linkcore_Opt.output_file in

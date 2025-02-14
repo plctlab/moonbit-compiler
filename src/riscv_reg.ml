@@ -176,6 +176,7 @@ module Imm = struct
   let to_string imm =
     match imm with
     | IntImm i -> string_of_int i
+    | Int64Imm i -> Int64.to_string i
     | FloatImm f -> string_of_float f
   ;;
 end

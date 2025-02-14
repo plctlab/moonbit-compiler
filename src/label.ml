@@ -19,66 +19,28 @@ module Label = struct
     }
 
   include struct
-    let _ = fun (_ : t) -> ()
+    let sexp_of_t { name; stamp } =
+      S.List [
+        S.List [ S.Atom "name"; Moon_sexp_conv.sexp_of_string name ];
+        S.List [ S.Atom "stamp"; Moon_sexp_conv.sexp_of_int stamp ]]
 
-    let sexp_of_t =
-      (fun { name = name__002_; stamp = stamp__004_ } ->
-         let bnds__001_ = ([] : _ Stdlib.List.t) in
-         let bnds__001_ =
-           let arg__005_ = Moon_sexp_conv.sexp_of_int stamp__004_ in
-           (S.List [ S.Atom "stamp"; arg__005_ ] :: bnds__001_ : _ Stdlib.List.t)
-         in
-         let bnds__001_ =
-           let arg__003_ = Moon_sexp_conv.sexp_of_string name__002_ in
-           (S.List [ S.Atom "name"; arg__003_ ] :: bnds__001_ : _ Stdlib.List.t)
-         in
-         S.List bnds__001_
-       : t -> S.t)
-    ;;
+    let equal a b =
+         if a == b then true
+         else a.name = b.name && a.stamp = b.stamp
 
-    let _ = sexp_of_t
+    let hash_fold_t hsv arg =
+      let hsv = 
+       Ppx_base.hash_fold_string hsv arg.name
+      in Ppx_base.hash_fold_int hsv arg.stamp
 
-    let equal =
-      (fun a__006_ b__007_ ->
-         if Stdlib.( == ) a__006_ b__007_
-         then true
-         else Stdlib.( = ) (a__006_.stamp : int) b__007_.stamp
-       : t -> t -> bool)
-    ;;
+    let hash arg =
+      Ppx_base.get_hash_value (hash_fold_t (Ppx_base.create ()) arg)
 
-    let _ = equal
-
-    let (hash_fold_t : Ppx_base.state -> t -> Ppx_base.state) =
-      fun hsv arg ->
-      let hsv =
-        let hsv = hsv in
-        hsv
-      in
-      Ppx_base.hash_fold_int hsv arg.stamp
-    ;;
-
-    let _ = hash_fold_t
-
-    let (hash : t -> Ppx_base.hash_value) =
-      let func arg =
-        Ppx_base.get_hash_value
-          (let hsv = Ppx_base.create () in
-           hash_fold_t hsv arg)
-      in
-      fun x -> func x
-    ;;
-
-    let _ = hash
-
-    let compare =
-      (fun a__008_ b__009_ ->
-         if Stdlib.( == ) a__008_ b__009_
-         then 0
-         else Stdlib.compare (a__008_.stamp : int) b__009_.stamp
-       : t -> t -> int)
-    ;;
-
-    let _ = compare
+    let compare a b =
+        if a == b then 0
+        else if a.name <> b.name then
+          Stdlib.compare a.name b.name
+        else Stdlib.compare a.stamp b.stamp
   end
 end
 

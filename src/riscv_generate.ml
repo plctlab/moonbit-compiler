@@ -868,9 +868,9 @@ let rec do_convert tac (expr: Mcore.expr) =
       let old_vars = !loop_vars in
 
       (* Get the labels *)
-      let loop = Printf.sprintf "%s_%d" label.name label.stamp in
-      let before = Printf.sprintf "before_%s" loop in
-      let exit = Printf.sprintf "exit_%s" loop in
+      let loop = Printf.sprintf "loophead_%s_%d" label.name label.stamp in
+      let before = Printf.sprintf "loopbefore_%s" loop in
+      let exit = Printf.sprintf "loopexit_%s" loop in
       
       Vec.push tac (Jump before);
       
@@ -910,7 +910,7 @@ let rec do_convert tac (expr: Mcore.expr) =
       List.iter2 (fun rd rs -> Vec.push tac (Assign { rd; rs })) !loop_vars results;
 
       (* Jump back to the beginning of the loop. *)
-      let loop_name = Printf.sprintf "%s_%d" label.name label.stamp in 
+      let loop_name = Printf.sprintf "loophead_%s_%d" label.name label.stamp in 
       Vec.push tac (Jump loop_name);
       unit
 

@@ -57,7 +57,8 @@ module RPO = struct
   let get_func_rpo (funn : VFuncLabel.t) (rpo : t) : VBlockLabel.t list =
     match VFuncMap.find_opt rpo funn with
     | Some x -> x
-    | None -> failwith "RPO.get_func_rpo: function not found"
+    | None -> failwith
+      (Printf.sprintf "riscv_reg_util.ml: RPO not found for label %s_%d" funn.name funn.stamp)
   ;;
 
   let empty : t = VFuncMap.empty

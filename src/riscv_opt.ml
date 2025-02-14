@@ -31,7 +31,10 @@ let exit_fn = Hashtbl.create 256
 let (params: (string, var list) Hashtbl.t) = Hashtbl.create 256
 
 (** Get the basic block with label `name`. *)
-let block_of name = Hashtbl.find basic_blocks name
+let block_of name =
+  match Hashtbl.find_opt basic_blocks name with
+  | None -> failwith (Printf.sprintf "riscv_opt.ml: unknown basic block: %s" name)
+  | Some x -> x
 
 (** Get the body of a basic block. *)
 let body_of name = (block_of name).body |> Vec.to_list
