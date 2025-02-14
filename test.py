@@ -68,7 +68,13 @@ with DirContext("test"):
      
     for src in cases:
         print(f"Execute task: {src}")
-
+        
+        # Remove files from last time
+        try_remove(f"build/{target}.s.ir")
+        try_remove(f"build/{target}.s.ssa")
+        try_remove(f"build/{target}.s-no-opt.ssa")
+        try_remove(f"build/{target}.s.vasm")
+        
         # Note build-package is ignorant of target. It builds to a common IR.
         os.system(f"moonc build-package src/{src}/{src}.mbt -is-main -std-path {bundled} -o build/{src}.core")
 

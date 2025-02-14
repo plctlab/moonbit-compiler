@@ -40,6 +40,11 @@ let rpo : RPO.t ref = ref RPO.empty
 
 (* Spill environment: used to build the basic environment, etc. *)
 module SpillEnv = struct
+  (**
+  Data structure for data-flow analysis.
+  Here W stands for working registers (those aren't spilled);
+  S stands for spilled registers.
+  *)
   type spill_info =
     { entryW : SlotSet.t
     ; exitW : SlotSet.t
@@ -145,7 +150,7 @@ let compute_every_inst_nextuse (bl : VBlockLabel.t) : int SlotMap.t Vec.t =
   let block = VProg.get_block !vprog bl in
   let b_liveinfo = Liveness.get_liveinfo !live_info bl in
   let n = Vec.length block.body in
-  let nextUse = Vec.make ~dummy:SlotMap.empty (n + 1) in
+  let nextUse = Vec.of_list (List.init (n + 1) (fun _ -> SlotMap.empty)) in
 
   (* 1. Initialization *)
   SlotMap.iter b_liveinfo.exitNextUse (fun var dist ->
@@ -439,7 +444,7 @@ let apply_min_algorithm (bl : VBlockLabel.t) (nextUse : int SlotMap.t Vec.t) =
 
   (*3. Reload/Spill to be inserted before each instruction, including before Term, so it is n+1 *)
   let body_size = Vec.length block.body in
-  let addInsts = Vec.make ~dummy:(Vec.empty ()) (body_size + 1) in
+  let addInsts = Vec.of_list (List.init (body_size + 1) (fun _ -> Vec.empty ())) in
 
   (* 4. Common apply_inner function, but for clarity, the function to adjust k is passed in *)
   let apply_inner
@@ -472,7 +477,8 @@ let apply_min_algorithm (bl : VBlockLabel.t) (nextUse : int SlotMap.t Vec.t) =
     SlotSet.iter dests (fun var -> w := SlotSet.add !w var);
     let protected = dests in
     (* At this point, protected protects the registers being defined *)
-    let _ = limit_func nextUse w s spill protected (i + 1) adjust_k in
+    if i <> body_size then
+      limit_func nextUse w s spill protected (i + 1) adjust_k;
 
     (* e. Insert reload/spill instructions *)
     SlotSet.iter !reload (fun var -> Vec.push addInsts.![i] (Inst.generate_reload var));
@@ -580,9 +586,10 @@ let spill_reload_func (f_label : VFuncLabel.t) (func : VFunc.t) =
 ;;
 
 (* Main function: used to handle the entire program *)
-let spill_regs (vprog_in : VProg.t) (rpo : RPO.t) =
+let spill_regs (vprog_in : VProg.t) (rpo_arg : RPO.t) =
   vprog := vprog_in;
-  live_info := Liveness.liveness_analysis !vprog rpo;
+  live_info := Liveness.liveness_analysis !vprog rpo_arg;
+  rpo := rpo_arg;
   VFuncMap.iter !vprog.funcs spill_reload_func;
   ()
 ;;
