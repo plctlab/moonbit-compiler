@@ -450,6 +450,9 @@ module Inst = struct
     | Sextw { rd; rs } -> Printf.sprintf "sext.w %s, %s" (s rd) (s rs)
     | Zextw { rd; rs } -> Printf.sprintf "zext.w %s, %s" (s rd) (s rs)
     | Alloca { rd; size } -> Printf.sprintf "alloca %s, %d" (s rd) size
+
+    | Spill { target; origin } -> Printf.sprintf "spill %s %s" (s target) (s origin)
+    | Reload { target; origin } -> Printf.sprintf "reload %s %s" (s target) (s origin)
     | _ -> failwith "riscv_virtasm.ml: unsupported"
 end
 
@@ -621,9 +624,19 @@ module VProg = struct
     { blocks : VBlock.t VBlockMap.t
     ; funcs : VFunc.t VFuncMap.t
     ; consts : Imm.t VSymbolMap.t
-    ; loop_vars : SlotSet.t VBlockMap.t
-      (* Loop internal variables - 
+    (* Loop internal variables - 
     used for register allocation special identification*)
+    ; loop_vars : SlotSet.t VBlockMap.t
+
+    (* Global variables; stores the label and the size *)
+    ; globals: (string * int) list
+
+    (* Global arrays; stores the label and initial data. *)
+    
+    (* Note we treat it opaquely. The arrays might hold *)
+    (* a vtable or an int array with length at front;  *)
+    (* they are too different to abstract a same interface. *)
+    ; extarrs: Riscv_ssa.extern_array list
     }
 
   let get_block (vprog : t) (bl : VBlockLabel.t) : VBlock.t =
@@ -649,8 +662,18 @@ module VProg = struct
     ; funcs = VFuncMap.empty
     ; consts = VSymbolMap.empty
     ; loop_vars = VBlockMap.empty
+    ; globals = []
+    ; extarrs = []
     }
-  ;;
+  
+  let to_string (vprog: t) = 
+    (String.concat "\n\n"
+    (Label.Map.to_sorted_array vprog.blocks |> Array.to_list |>
+      List.map (fun (({ name = k; _}: Label.t), (v: VBlock.t)) ->
+        Printf.sprintf "%s:\n%s%s%s" k (
+          String.concat "\n" (Vec.to_list v.body |> List.map Inst.to_string)
+        ) (if Vec.length v.body = 0 then "" else "\n") (Term.to_string v.term))
+    ))
 end
 
 (* Note: *)

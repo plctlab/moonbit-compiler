@@ -10,7 +10,10 @@ module Vec = Basic_vec
 
 let slot = ref 0
 let vfuncs: VFunc.t Vec.t = Vec.empty ()
+let globals: (string * int) Vec.t = Vec.empty() 
+let extarrs: extern_array Vec.t = Vec.empty ()
 let vblocks: (string, VBlock.t) Hashtbl.t = Hashtbl.create 512
+let vloopvars: (string, Slot.t Vec.t) Hashtbl.t = Hashtbl.create 512
 let slot_map: (string, Slot.t) Hashtbl.t = Hashtbl.create 2048
 
 (* We don't need to use stamp. *)
@@ -349,14 +352,45 @@ let gen_fn (f: fn) =
   };
 
   let blocks = get_blocks f.fn in
+  let bodies = Hashtbl.create 128 in
+  let terminators = Hashtbl.create 128 in
+  Hashtbl.clear phis;
   List.iter (fun x -> Hashtbl.add phis x (Vec.empty ())) blocks;
+  List.iter (fun x -> Hashtbl.add vloopvars x (Vec.empty ())) blocks;
   List.iter (fun x ->
     let block = block_of x in
     let body = Vec.empty () in
     let term = ref (Term.Ret Unit) in
     Vec.iter (convert_single x body term) block.body;
+    Hashtbl.add bodies x body;
+    Hashtbl.add terminators x !term
+  ) blocks;
+
+  Hashtbl.iter (fun name phi_insts ->
+    (* Destruct phi instructions *)
+    Vec.iter (fun ({ rd; rs }: phi) ->
+      List.iter (fun (v, from) ->
+        Vec.push (Hashtbl.find bodies from) (Inst.Mv { rd = slot_v rd; rs = slot_v v })
+      ) rs
+    ) phi_insts;
+
+    (* If this is loop head, record its loop variables for its predecessors *)
+    if String.starts_with ~prefix:"loophead_" name then (
+      let block = block_of name in
+      Vec.iter (fun pred ->
+        Vec.iter (fun ({ rd; _ } : phi) ->
+          Vec.push (Hashtbl.find vloopvars pred) (slot_v rd)
+        ) (Hashtbl.find phis name)
+      ) block.pred
+    )
+  ) phis;
+
+  List.iter (fun x ->
+    let block = block_of x in
     Hashtbl.add vblocks x {
-      body; term = !term; preds =
+      body = Hashtbl.find bodies x;
+      term = Hashtbl.find terminators x;
+      preds =
         Vec.to_list block.pred
         |> List.map (fun pred ->
           (* The labels are fixed for loops in `riscv_generate.ml`. *)
@@ -370,9 +404,11 @@ let gen_fn (f: fn) =
   ) blocks;
   ()
 
-let gen_var v = ()
+let gen_var { name; ty } =
+  Vec.push globals (name, sizeof ty)
 
-let gen_extarr arr = ()
+let gen_extarr arr =
+  Vec.push extarrs arr
 
 (** On calling this function, `ssa` must be coherent with basic block information in `opt` *)
 let virtasm_of_ssa (ssa : Riscv_ssa.t list) =
@@ -390,18 +426,20 @@ let virtasm_of_ssa (ssa : Riscv_ssa.t list) =
     Hashtbl.to_seq vblocks |> List.of_seq |> List.map (fun (k, v) -> (label_of k, v))
   ) in
 
+  let loop_vars = Label.Map.of_list (
+    Hashtbl.to_seq vloopvars |> List.of_seq |>
+      List.map (fun (k, v) -> (label_of k, SlotSet.of_list (Vec.to_list v)))
+  ) in
+
+  let vprog = ({
+      funcs; blocks;
+      consts = Label.Map.empty;
+      loop_vars;
+      globals = Vec.to_list globals;
+      extarrs = Vec.to_list extarrs;
+    }: VProg.t) in
   
   let out = Printf.sprintf "%s.vasm" !Driver_config.Linkcore_Opt.output_file in
-  Basic_io.write out (String.concat "\n\n"
-    (Hashtbl.to_seq vblocks |> List.of_seq |>
-      List.map (fun (k, (v: VBlock.t)) -> Printf.sprintf "%s:\n%s%s%s" k (
-        String.concat "\n" (Vec.to_list v.body |> List.map Inst.to_string)
-      ) (if Vec.length v.body = 0 then "" else "\n") (Term.to_string v.term))
-  ));
+  Basic_io.write out (VProg.to_string vprog);
+  vprog
   
-  ({
-    funcs; blocks;
-    consts = Label.Map.empty;
-    loop_vars = Label.Map.empty;
-  }: VProg.t)
-
