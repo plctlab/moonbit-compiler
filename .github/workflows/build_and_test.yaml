@@ -22,7 +22,9 @@ jobs:
       - name: Checkout tree
         uses: actions/checkout@v4
 
-      - run: sudo apt install -yq opam
+      - run: |
+              sudo apt update -yq
+              sudo apt install -yq opam
 
       - run: |
              opam init --disable-sandboxing -y
