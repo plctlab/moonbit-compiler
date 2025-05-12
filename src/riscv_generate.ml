@@ -524,7 +524,25 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
   
   | Pprintln ->
       Vec.push tac (CallExtern { rd; fn = "puts"; args })
-  
+  | Pnot -> 
+      Vec.push tac (Not { rd; rs1 = List.hd args })
+  (* | Primitive.Pccall { func_name = "";_} -> _
+  | Primitive.Pnot -> _
+  | Primitive.Praise -> _
+  | Primitive.Punreachable -> _
+  | Primitive.Pcatch -> _
+  | Primitive.Psequand -> _
+  | Primitive.Psequor -> _
+  | Primitive.Pstringequal -> _
+  | Primitive.Pclosure_to_extern_ref -> _
+  | Primitive.Pnull_string_extern -> _
+  | Primitive.Perror_to_string -> _
+  | Primitive.Pany_to_string -> _
+  | Primitive.Pintrinsic -> _
+  | Primitive.Pcast -> _
+  | Primitive.Pcompare -> _
+  | Primitive.Pset_enum_field -> _
+  | Primitive.Pmake_value_or_error *)
   | _ -> failwith (Printf.sprintf "unknown primitive %s" (Primitive.sexp_of_prim prim |> S.to_string))
 
 

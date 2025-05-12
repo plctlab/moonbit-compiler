@@ -232,6 +232,9 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
       Vec.push body (Inst.Xor { rd = slot_v rd; rs1 = slot_v rs1; rs2 = slot_v rs2 });
       Vec.push body (Inst.Sltu { rd = slot_v rd; rs1 = Slot.Reg Zero; rs2 = slot_v rd })
 
+  | Not { rd; rs1 } -> 
+      Vec.push body (Inst.Slti { rd = slot_v rd; rs1 = slot_v rs1; imm = 1 })
+
   | Call { rd; fn; args } ->
       let r = slot_v rd in
       let int_args = Vec.empty () in
@@ -332,6 +335,26 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
 
   | Jump label ->
       terminator := Term.J (label_of label)
+  (* | Neg -> _
+  | Sll -> _
+  | Slli -> _
+  | Slti -> _
+  | FAdd -> _
+  | FSub -> _
+  | FMul -> _
+  | FDiv -> _
+  | FLess -> _
+  | FLeq -> _
+  | FGreat -> _
+  | FGeq -> _
+  | FEq -> _
+  | FNeq -> _
+  | FNeg -> _
+  | AssignFP -> _
+  | JumpIndirect -> _
+  | FnDecl -> _
+  | GlobalVarDecl -> _
+  | ExtArray _ -> _ *)
     
   | _ -> failwith (Printf.sprintf "unsupported ssa: %s" (to_string inst))
 
