@@ -932,6 +932,12 @@ let rec do_convert tac (expr: Mcore.expr) =
       Vec.push tac (Jump loop_name);
       unit
 
+  | Cexpr_break { label; _ } ->
+    (* Jumps to exit of the loop. *)
+    let loop_name = Printf.sprintf "loophead_%s_%d" label.name label.stamp in
+    Vec.push tac (Jump ("loopexit_" ^ loop_name));
+    unit
+
   (* Assigns mutable variables. *)
   | Cexpr_assign { var; expr; ty } ->
       let rd = do_convert tac expr in
@@ -977,12 +983,6 @@ let rec do_convert tac (expr: Mcore.expr) =
 
       List.iter visit fields;
       rd
-
-  | Cexpr_break { label; _ } ->
-      (* Jumps to exit of the loop. *)
-      let loop_name = Printf.sprintf "%s_%d" label.name label.stamp in
-      Vec.push tac (Jump ("exit_" ^ loop_name));
-      unit
 
   | Cexpr_tuple { exprs; ty; _ } ->
       let rd = new_temp ty in
