@@ -210,6 +210,8 @@ module Inst = struct
     | Sltw of r_slot
     | Sltu of r_slot
     | Sltuw of r_slot
+    | Slti of i_slot
+    | Sltiw of i_slot
 
     | Sll of r_slot (* shift left logical *)
     | Sllw of r_slot
@@ -222,12 +224,12 @@ module Inst = struct
 
     | Slli of i_slot (* shift left logical immediate *)
     | Slliw of i_slot
+
     | Srli of i_slot (* shift right logical immediate *)
     | Srliw of i_slot
+    
     | Srai of i_slot (* shift right arithmetic immediate *)
     | Sraiw of i_slot
-    | Slti of i_slot
-    | Sltiw of i_slot
     (* Multiplication and Division Instructions *)
     (* Memory Access Instructions *)
     | Lb of mem_slot
