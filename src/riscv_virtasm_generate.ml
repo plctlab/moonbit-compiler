@@ -113,6 +113,25 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
       | T_uint64 -> Inst.Remu r
       | _ -> die (Printf.sprintf "rem: unexpected type %s" (Mtype.to_string rd.ty)))
 
+  (* Shift *)
+
+  | Sll ({ rd; rs1; rs2 } as x) ->
+      let r = rslot x in
+      (* Note we use rs1 type in leftshift *)
+      (match rs1.ty with
+      | T_uint | T_int -> Vec.push body (Inst.Sllw r)
+      | T_uint64 | T_int64 -> Vec.push body (Inst.Sll r)
+      | _ -> die (Printf.sprintf "sll: unexpected type %s" (Mtype.to_string rs1.ty)))
+
+  | Slli { rd; rs; imm } ->
+      let r = ({ rd = slot_v rd; rs1 = slot_v rs; imm } : Slots.i_slot) in
+      (match rs.ty with
+      | T_uint | T_int -> Vec.push body (Inst.Slliw r)
+      | T_uint64 | T_int64 -> Vec.push body (Inst.Slli r)
+      | _ -> die (Printf.sprintf "slli: unexpected type %s" (Mtype.to_string rs.ty)))
+
+  (* Logical; assumes rs1 is unsigned *)
+
   (* Arithmetic; assumes rs1 is signed *)
   | Sra ({ rd; rs1; rs2 } as x) ->
       let r = rslot x in
@@ -141,9 +160,9 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
   | Srli ({ rd; rs; imm }) ->
       let r = ({ rd = slot_v rd; rs1 = slot_v rs; imm } : Slots.i_slot) in
       (match rs.ty with
-      | T_uint -> Vec.push body (Inst.Sraiw r)
-      | T_uint64 -> Vec.push body (Inst.Srai r)
-      | _ -> die (Printf.sprintf "srai: unexpected type %s" (Mtype.to_string rs.ty)))
+      | T_uint -> Vec.push body (Inst.Srliw r) 
+      | T_uint64 -> Vec.push body (Inst.Srli r)
+      | _ -> die (Printf.sprintf "srli: unexpected type %s" (Mtype.to_string rs.ty)))
     
   | And ({ rd; rs1; rs2 } as x) ->
       let r = rslot x in
@@ -231,6 +250,18 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
   | Neq { rd; rs1; rs2 } ->
       Vec.push body (Inst.Xor { rd = slot_v rd; rs1 = slot_v rs1; rs2 = slot_v rs2 });
       Vec.push body (Inst.Sltu { rd = slot_v rd; rs1 = Slot.Reg Zero; rs2 = slot_v rd })
+
+  | Slti { rd; rs; imm } ->
+      (* rd = rs1 < rs2 *)
+      let r = ({
+        rd = slot_v rd;
+        rs1 = slot_v rs;
+        imm
+      }: Slots.i_slot) in
+      Vec.push body (match rs.ty with 
+      | T_int -> Inst.Sltiw r
+      | T_int64 -> Inst.Slti r
+      | _ -> die (Printf.sprintf "slti: unexpected type %s" (Mtype.to_string rs.ty)))
 
   | Not { rd; rs1 } -> 
       Vec.push body (Inst.Slti { rd = slot_v rd; rs1 = slot_v rs1; imm = 1 })
@@ -336,9 +367,6 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
   | Jump label ->
       terminator := Term.J (label_of label)
   (* | Neg -> _
-  | Sll -> _
-  | Slli -> _
-  | Slti -> _
   | FAdd -> _
   | FSub -> _
   | FMul -> _
