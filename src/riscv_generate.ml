@@ -526,13 +526,19 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       Vec.push tac (CallExtern { rd; fn = "puts"; args })
   | Pnot -> 
       Vec.push tac (Not { rd; rs1 = List.hd args })
+  | Pstringequal -> 
+      let cmp_res = new_temp Mtype.T_int in
+      let zero = new_temp Mtype.T_bytes in
+      Vec.push tac (CallExtern { rd = cmp_res; fn = "strcmp"; args });
+      Vec.push tac (AssignInt64 { rd = zero; imm = 0L });
+      Vec.push tac (Eq { rd; rs1 = cmp_res; rs2 = zero });
+
   (* | Primitive.Pccall { func_name = "";_} -> _
   | Primitive.Praise -> _
   | Primitive.Punreachable -> _
   | Primitive.Pcatch -> _
   | Primitive.Psequand -> _
   | Primitive.Psequor -> _
-  | Primitive.Pstringequal -> _
   | Primitive.Pclosure_to_extern_ref -> _
   | Primitive.Pnull_string_extern -> _
   | Primitive.Perror_to_string -> _
