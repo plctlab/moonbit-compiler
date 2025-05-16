@@ -86,6 +86,13 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
       | T_uint -> Vec.push body (Inst.Subw r); Vec.push body (Zextw { rd = r.rd; rs = r.rd })
       | _ -> Vec.push body (Inst.Sub r))
 
+  | Neg ({rd ; rs1}) ->
+      let r = ({ rd = slot_v rd; rs1 = Slot.Reg Zero ; rs2 = slot_v rs1}: Slots.r_slot) in
+      (match rd.ty with 
+      | T_int -> Vec.push body (Inst.Subw r); Vec.push body (Zextw { rd = r.rd; rs = r.rd })
+      | T_int64 -> Vec.push body (Inst.Sub r)
+      | _ -> die (Printf.sprintf "neg: unexpected type %s" (Mtype.to_string rd.ty)))
+
   | Mul ({ rd; rs1; rs2 } as x) ->
       let r = rslot x in
       (match rd.ty with
@@ -153,8 +160,8 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
   | Srai ({ rd; rs; imm }) ->
       let r = ({ rd = slot_v rd; rs1 = slot_v rs; imm } : Slots.i_slot) in
       (match rs.ty with
-      | T_int -> Vec.push body (Inst.Sraiw r)
-      | T_int64 -> Vec.push body (Inst.Srai r)
+      | T_int | T_uint -> Vec.push body (Inst.Sraiw r)
+      | T_int64 | T_uint64 -> Vec.push body (Inst.Srai r)
       | _ -> die (Printf.sprintf "srai: unexpected type %s" (Mtype.to_string rs.ty)))
   
   | Srli ({ rd; rs; imm }) ->
@@ -259,8 +266,8 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
         imm
       }: Slots.i_slot) in
       Vec.push body (match rs.ty with 
-      | T_int -> Inst.Sltiw r
-      | T_int64 -> Inst.Slti r
+      | T_int | T_uint -> Inst.Sltiw r
+      | T_int64 | T_uint64 -> Inst.Slti r
       | _ -> die (Printf.sprintf "slti: unexpected type %s" (Mtype.to_string rs.ty)))
 
   | Not { rd; rs1 } -> 
@@ -366,7 +373,16 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
 
   | Jump label ->
       terminator := Term.J (label_of label)
-  (* | Neg -> _
+
+  | JumpIndirect { rs; possibilities } -> (* TODO: Optimizations on possibilities *)
+      terminator := Term.Jalr {
+        rd = Slot.Reg Zero;
+        rs1 = slot_v rs;
+        offset = 0;
+      };
+
+  (* Floating point instructions *)
+  (* 
   | FAdd -> _
   | FSub -> _
   | FMul -> _
@@ -379,7 +395,6 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
   | FNeq -> _
   | FNeg -> _
   | AssignFP -> _
-  | JumpIndirect -> _
   | FnDecl -> _
   | GlobalVarDecl -> _
   | ExtArray _ -> _ *)
