@@ -1156,7 +1156,7 @@ let rec do_convert tac (expr: Mcore.expr) =
       (* Choose which place to jump to *)
       let jtable = new_temp Mtype.T_bytes in
       let ptr_sz = new_temp Mtype.T_int in
-      let off = new_temp Mtype.T_bytes in
+      let off = new_temp Mtype.T_int in
       let altered = new_temp Mtype.T_bytes in
       let target = new_temp Mtype.T_bytes in
       
@@ -1244,6 +1244,7 @@ let rec do_convert tac (expr: Mcore.expr) =
         let values =
           List.map (fun (t, _) -> 
             match t with
+            | Constant.C_bool b -> Bool.to_int b
             | Constant.C_int { v } -> Int32.to_int v
             | Constant.C_char v -> Uchar.to_int v
             | _ -> failwith "TODO: unsupported switch constant type"
@@ -1254,7 +1255,7 @@ let rec do_convert tac (expr: Mcore.expr) =
         let mn = List.fold_left (fun mn x -> min mn x) 2147483647 values in
 
         (* Sparse values, convert to if-else *)
-        if mx - mn >= 256 then (
+        if mx - mn >= 256 || len < 16 then (
           let ifexit = new_label "match_ifexit_" in
           List.iter2 (fun x (_, expr) ->
             let equal = new_temp Mtype.T_bool in

@@ -46,7 +46,7 @@ let slot_v v =
 
 (** Terminator and body are output arguments *)
 let convert_single name body terminator (inst: Riscv_ssa.t) =
-  let die msg = failwith (Printf.sprintf "riscv_virtasm_generate.ml: %s" msg) in
+  let die msg = failwith (Printf.sprintf "riscv_virtasm_generate.ml: %s. Complete SSA instruction: %s" msg (Riscv_ssa.to_string inst)) in
 
   let rslot ({ rd; rs1; rs2 }: Riscv_ssa.r_type) =
     ({
