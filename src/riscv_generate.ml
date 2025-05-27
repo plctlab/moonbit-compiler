@@ -69,6 +69,14 @@ let nameof (x: Mtype.t) = match x with
 
 let remove_space = String.map (fun c -> if c = ' ' then '_' else c)
 
+let revert_optimized_option_type = function 
+| Mtype.T_optimized_option { elem } -> 
+    (match elem with 
+    | Mtype.T_char | T_bool | T_unit | T_byte -> Mtype.T_int
+    | Mtype.T_int | T_uint -> Mtype.T_int64
+    | _ -> failwith (Printf.sprintf "riscv_generate.ml: bad optimized_option type %s in revert" (Mtype.to_string elem)))
+| otherwise -> otherwise
+
 (** Push the correct sequence of instruction based on primitives. *)
 let deal_with_prim tac rd (prim: Primitive.prim) args =
   let die () =
@@ -139,6 +147,7 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       (* But convert is where we must take some action *)
       else
         let arg = List.hd args in 
+        let arg = { arg with ty = revert_optimized_option_type arg.ty } in
         (match from, to_ with
         | I32, U8 | U32, U8 ->
             (* Discard higher bits by masking them away *)
