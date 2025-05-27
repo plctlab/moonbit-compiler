@@ -163,7 +163,7 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
             (* Discard higher bits by shifting, but arithmetic *)
             let temp = new_temp Mtype.T_uint64 in
             Vec.push tac (Slli { rd = temp; rs = arg; imm = 32 });
-            Vec.push tac (Srai { rd; rs = temp; imm = 32 })
+            Vec.push tac (Srli { rd; rs = temp; imm = 32 })
 
         | I32, U32 | U32, I32 | I32, I64 ->
             (* Simply do nothing *)
@@ -541,7 +541,6 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       Vec.push tac (CallExtern { rd = cmp_res; fn = "strcmp"; args });
       Vec.push tac (AssignInt64 { rd = zero; imm = 0L });
       Vec.push tac (Eq { rd; rs1 = cmp_res; rs2 = zero });
-
   (* | Primitive.Pccall { func_name = "";_} -> _
   | Primitive.Praise -> _
   | Primitive.Punreachable -> _

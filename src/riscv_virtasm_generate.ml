@@ -373,14 +373,12 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
 
   | Jump label ->
       terminator := Term.J (label_of label)
-
   | JumpIndirect { rs; possibilities } -> (* TODO: Optimizations on possibilities *)
       terminator := Term.Jalr {
         rd = Slot.Reg Zero;
         rs1 = slot_v rs;
         offset = 0;
       };
-
   (* Floating point instructions *)
   (* 
   | FAdd -> _
