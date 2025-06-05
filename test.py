@@ -23,6 +23,7 @@ parser.add_argument("-b", "--build", action="store_true", help="rebuild compiler
 parser.add_argument("-v", "--verbose", action="store_true", help="on rebuild, makes interpreter output detailed values")
 parser.add_argument("-c", "--compile-only", action="store_true", help="compile without executing tests")
 parser.add_argument("-t", "--test", type=str, help="execute this test case only")
+parser.add_argument("--gcc", action="store_true", help="use gcc instead of clang++")
 
 args = parser.parse_args()
 
@@ -57,7 +58,10 @@ os.system("dune build -p moonbit-lang")
 if args.build and not args.wasm:
     print("Building SSA interpreter...")
     os.makedirs("test/build", exist_ok=True)
-    os.system(f"clang++ -std=c++20 {verbose} test/interpreter.cpp -Wall -g -o test/build/interpreter")
+    if args.gcc:
+        os.system(f"g++ -std=c++20 {verbose} test/interpreter.cpp -Wall -g -o test/build/interpreter")
+    else:
+        os.system(f"clang++ -std=c++20 {verbose} test/interpreter.cpp -Wall -g -o test/build/interpreter")
     print("Done.")
     exit(0)
     
@@ -102,6 +106,11 @@ with DirContext("test"):
             if diff == 0:
                 print("Passed.")
             else:
+                print("Failed.")
+                print("Expected output:")
+                os.system(f"cat src/{src}/{src}.ans")
+                print("Actual output:")
+                os.system(f"cat build/output.txt")
                 success = False
 
 exit(not success)

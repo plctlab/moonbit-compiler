@@ -69,6 +69,14 @@ let nameof (x: Mtype.t) = match x with
 
 let remove_space = String.map (fun c -> if c = ' ' then '_' else c)
 
+let revert_optimized_option_type = function 
+| Mtype.T_optimized_option { elem } -> 
+    (match elem with 
+    | Mtype.T_char | T_bool | T_unit | T_byte -> Mtype.T_int
+    | Mtype.T_int | T_uint -> Mtype.T_int64
+    | _ -> failwith (Printf.sprintf "riscv_generate.ml: bad optimized_option type %s in revert" (Mtype.to_string elem)))
+| otherwise -> otherwise
+
 (** Push the correct sequence of instruction based on primitives. *)
 let deal_with_prim tac rd (prim: Primitive.prim) args =
   let die () =
@@ -139,6 +147,7 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       (* But convert is where we must take some action *)
       else
         let arg = List.hd args in 
+        let arg = { arg with ty = revert_optimized_option_type arg.ty } in
         (match from, to_ with
         | I32, U8 | U32, U8 ->
             (* Discard higher bits by masking them away *)
@@ -154,7 +163,7 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
             (* Discard higher bits by shifting, but arithmetic *)
             let temp = new_temp Mtype.T_uint64 in
             Vec.push tac (Slli { rd = temp; rs = arg; imm = 32 });
-            Vec.push tac (Srli { rd; rs = temp; imm = 32 })
+            Vec.push tac (Srai { rd; rs = temp; imm = 32 })
 
         | I32, U32 | U32, I32 | I32, I64 ->
             (* Simply do nothing *)
@@ -526,13 +535,19 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       Vec.push tac (CallExtern { rd; fn = "puts"; args })
   | Pnot -> 
       Vec.push tac (Not { rd; rs1 = List.hd args })
+  | Pstringequal -> 
+      let cmp_res = new_temp Mtype.T_int in
+      let zero = new_temp Mtype.T_bytes in
+      Vec.push tac (CallExtern { rd = cmp_res; fn = "strcmp"; args });
+      Vec.push tac (AssignInt64 { rd = zero; imm = 0L });
+      Vec.push tac (Eq { rd; rs1 = cmp_res; rs2 = zero });
+
   (* | Primitive.Pccall { func_name = "";_} -> _
   | Primitive.Praise -> _
   | Primitive.Punreachable -> _
   | Primitive.Pcatch -> _
   | Primitive.Psequand -> _
   | Primitive.Psequor -> _
-  | Primitive.Pstringequal -> _
   | Primitive.Pclosure_to_extern_ref -> _
   | Primitive.Pnull_string_extern -> _
   | Primitive.Perror_to_string -> _
@@ -1156,7 +1171,7 @@ let rec do_convert tac (expr: Mcore.expr) =
       (* Choose which place to jump to *)
       let jtable = new_temp Mtype.T_bytes in
       let ptr_sz = new_temp Mtype.T_int in
-      let off = new_temp Mtype.T_bytes in
+      let off = new_temp Mtype.T_int in
       let altered = new_temp Mtype.T_bytes in
       let target = new_temp Mtype.T_bytes in
       
@@ -1244,6 +1259,7 @@ let rec do_convert tac (expr: Mcore.expr) =
         let values =
           List.map (fun (t, _) -> 
             match t with
+            | Constant.C_bool b -> Bool.to_int b
             | Constant.C_int { v } -> Int32.to_int v
             | Constant.C_char v -> Uchar.to_int v
             | _ -> failwith "TODO: unsupported switch constant type"
@@ -1254,7 +1270,7 @@ let rec do_convert tac (expr: Mcore.expr) =
         let mn = List.fold_left (fun mn x -> min mn x) 2147483647 values in
 
         (* Sparse values, convert to if-else *)
-        if mx - mn >= 256 then (
+        if mx - mn >= 256 || len < 16 then (
           let ifexit = new_label "match_ifexit_" in
           List.iter2 (fun x (_, expr) ->
             let equal = new_temp Mtype.T_bool in

@@ -308,6 +308,11 @@ int64_t interpret(std::string label) {
                     continue;
                 }
 
+                if (args[2] == "strcmp") {
+                    VAL(1) = (int64_t) strcmp((char*) VAL(3), (char*) VAL(4));
+                    continue;
+                }
+
                 if (args[2] == "memset") {
                     memset((void*) VAL(3), VAL(4), VAL(5));
                     VAL(1) = unit;
