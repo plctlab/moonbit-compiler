@@ -253,7 +253,11 @@ let rec sizeof ty =
 
   (* Optimized option uses special values to indicate None for integer types *)
   (* So the size is equal to the underlying integer type *)
-  (* | Mtype.T_optimized_option { elem } -> sizeof elem *)
+  | Mtype.T_optimized_option { elem } -> (match elem with 
+    | Mtype.T_char | Mtype.T_byte | Mtype.T_bool | Mtype.T_unit -> 4
+    | Mtype.T_int | Mtype.T_uint -> 8
+    | Mtype.T_constr _ -> 4
+    | _ -> failwith ("riscv_ssa.ml: cannot calculate size for optimized option with type: " ^ Mtype.to_string elem))
   
   (* Same size as the underlying type *)
   | Mtype.T_maybe_uninit x -> sizeof x
