@@ -133,7 +133,7 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
   | Slli { rd; rs; imm } ->
       let r = ({ rd = slot_v rd; rs1 = slot_v rs; imm } : Slots.i_slot) in
       (match rs.ty with
-      | T_uint | T_int -> Vec.push body (Inst.Slliw r)
+      | T_uint | T_int | T_optimized_option { elem = _ } -> Vec.push body (Inst.Slliw r)
       | T_uint64 | T_int64 -> Vec.push body (Inst.Slli r)
       | _ -> die (Printf.sprintf "slli: unexpected type %s" (Mtype.to_string rs.ty)))
 

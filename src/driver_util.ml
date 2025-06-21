@@ -245,7 +245,7 @@ let wasm_gen ~(elim_unused_let : bool) (core : Mcore.t) ~clam_callback =
 let riscv_gen (core : Mcore.t) =
   core
   |> Riscv_generate.ssa_of_mcore
-  |> Riscv_opt_gather.opt
+  |> Riscv_opt_gather.opt_gather
   |> Riscv_virtasm_generate.virtasm_of_ssa
   |> Riscv_reg_alloc.reg_alloc
   |> Riscv.generate

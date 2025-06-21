@@ -146,8 +146,8 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
 
       (* But convert is where we must take some action *)
       else
-        let arg = List.hd args in 
-        let arg = { arg with ty = revert_optimized_option_type arg.ty } in
+        let arg = List.hd args in
+        (* let arg = { arg with ty = revert_optimized_option_type arg.ty } in *)
         (match from, to_ with
         | I32, U8 | U32, U8 ->
             (* Discard higher bits by masking them away *)
@@ -660,7 +660,6 @@ let rec do_convert tac (expr: Mcore.expr) =
         Vec.push tac (Load { rd; rs = variable; offset = 0; byte = sizeof ty });
         rd
       )
-  
       
   (* A cast from a type into some trait. *)
   | Cexpr_object { self; methods_key = { trait; _ } ; _ } ->
