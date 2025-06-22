@@ -256,7 +256,7 @@ let rec sizeof ty =
   | Mtype.T_optimized_option { elem } -> (match elem with 
     | Mtype.T_char | Mtype.T_byte | Mtype.T_bool | Mtype.T_unit -> 4
     | Mtype.T_int | Mtype.T_uint -> 8
-    | Mtype.T_constr _ -> 4
+    | Mtype.T_constr _ -> sizeof elem
     | _ -> failwith ("riscv_ssa.ml: cannot calculate size for optimized option with type: " ^ Mtype.to_string elem))
   
   (* Same size as the underlying type *)
