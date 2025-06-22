@@ -22,8 +22,13 @@ fn List::get[T](l : List[T], index : Int) -> T? {
   }
 }
 
+struct Point {
+  x : Int
+  y : Int 
+} derive(Show)
+
 fn main {
-  let l = Cons(1, Cons(2, Cons(3, Nil)))
+  let l = Cons({ x: 1, y: 2 }, Cons({ x: 3, y: 4 }, Nil))
   println(l.length())
   println(l.get(1)) 
 }

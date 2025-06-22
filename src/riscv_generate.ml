@@ -890,12 +890,14 @@ let rec do_convert tac (expr: Mcore.expr) =
         jump head
 
       loop:
-        # body
+        # body (containing continue and break)
+        # merge results to result
         jump exit
 
       exit:
+        return result
   *)
-  | Cexpr_loop { params; body; args; label; _ } ->
+  | Cexpr_loop { params; body; args; label; ty; _ } ->
       let old_vars = !loop_vars in
 
       (* Get the labels *)
@@ -921,13 +923,13 @@ let rec do_convert tac (expr: Mcore.expr) =
       Vec.push tac (Jump loop);
       Vec.push tac (Label loop);
 
-      let _ = do_convert tac body in
+      let result = do_convert tac body in
       Vec.push tac (Jump exit);
       Vec.push tac (Label exit);
 
       (* Store `loop_vars` back; let outer loop go on normally. *)
       loop_vars := old_vars;
-      unit
+      result
 
   (* See the explanation for Cexpr_loop. *)
   | Cexpr_continue { args; label } ->
