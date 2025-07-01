@@ -646,23 +646,33 @@ let rec do_convert tac (expr: Mcore.expr) =
 
       let is_global = Stringset.mem name !global_vars in
 
+      let is_fn = Stringset.mem name !fn_names in
+
       (* Mutable variables are treated as pointers. *)
       let is_pointer =
         (match id with Pmutable_ident _ -> true | _ -> false)
       in
 
-      if not is_pointer && not is_global then variable
-      else if is_global then (
+      if is_global then 
         let rd = new_temp ty in
         let label = new_temp Mtype.T_bytes in
         Vec.push tac (AssignLabel { rd = label; imm = name });
         Vec.push tac (Load { rd; rs = label; offset = 0; byte = sizeof ty });
         rd
-      ) else (
+      else if is_fn then 
+        let closure = new_temp Mtype.T_bytes in
+        let fptr = new_temp Mtype.T_bytes in
+        Vec.push tac (Malloc { rd = closure; size = sizeof Mtype.T_bytes });
+        Vec.push tac (AssignLabel { rd = fptr; imm = name });
+        Vec.push tac (Store { rd = fptr; rs = closure; offset = 0; byte = pointer_size });
+        closure
+      else if is_pointer then 
         let rd = new_temp ty in
         Vec.push tac (Load { rd; rs = variable; offset = 0; byte = sizeof ty });
         rd
-      )
+      else 
+        variable
+
       
   (* A cast from a type into some trait. *)
   | Cexpr_object { self; methods_key = { trait; _ } ; _ } ->
@@ -746,7 +756,14 @@ let rec do_convert tac (expr: Mcore.expr) =
           Vec.push tac (Store { rd = rs; rs = rd; offset = 0; byte = sizeof rs.ty });
       
       | _ ->
+        (* (match rs.ty with
+        | Mtype.T_func _ -> 
           let rd = { name = Ident.to_string name; ty = rs.ty } in
+          Vec.push tac (AssignLabel { rd; imm = rs.name });
+        | _ ->
+          let rd = { name = Ident.to_string name; ty = rs.ty } in
+          Vec.push tac (Assign { rd; rs }))); *)
+        let rd = { name = Ident.to_string name; ty = rs.ty } in
           Vec.push tac (Assign { rd; rs }));
       do_convert tac body
 
