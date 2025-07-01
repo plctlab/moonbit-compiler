@@ -627,6 +627,9 @@ let record_traits (methods: Object_util.t) =
 (** Loop variables of the current loop. Used by Cexpr_continue. *)
 let loop_vars: var list ref = ref []
 
+(** Loop result value of the current loop. Used by Cexpr_break. *)
+let loop_result_value: var ref = ref { name = ""; ty = Mtype.T_unit } 
+
 (**
 This function stores the SSA generated in the given argument `tac`.
 
@@ -899,6 +902,9 @@ let rec do_convert tac (expr: Mcore.expr) =
   *)
   | Cexpr_loop { params; body; args; label; ty; _ } ->
       let old_vars = !loop_vars in
+      let old_result = !loop_result_value in
+      if ty <> T_unit then 
+        loop_result_value := new_temp ty;
 
       (* Get the labels *)
       let loop = Printf.sprintf "loophead_%s_%d" label.name label.stamp in
@@ -924,11 +930,22 @@ let rec do_convert tac (expr: Mcore.expr) =
       Vec.push tac (Label loop);
 
       let result = do_convert tac body in
+      Vec.push tac (Assign { rd = !loop_result_value; rs = result });
       Vec.push tac (Jump exit);
       Vec.push tac (Label exit);
 
-      (* Store `loop_vars` back; let outer loop go on normally. *)
+      let result =
+        if ty = T_unit then unit
+        else !loop_result_value
+      in 
+
+      (* If this is a `Join`, then we must jump to the corresponding letfn *)
+
+      (* Store `loop_vars` and `loop_result_value` back; let outer loop go on normally. *)
       loop_vars := old_vars;
+      if ty <> T_unit then 
+        loop_result_value := old_result;
+
       result
 
   (* See the explanation for Cexpr_loop. *)
@@ -947,8 +964,11 @@ let rec do_convert tac (expr: Mcore.expr) =
       Vec.push tac (Jump loop_name);
       unit
 
-  | Cexpr_break { label; _ } ->
+  | Cexpr_break { label; arg; ty; _ } ->
     (* Jumps to exit of the loop. *)
+    Option.iter (fun arg -> Vec.push tac (Assign { rd = !loop_result_value; rs = do_convert tac arg})) arg;
+    
+    (* If this is a `Join`, then we must jump to the corresponding letfn *)
     let loop_name = Printf.sprintf "loophead_%s_%d" label.name label.stamp in
     Vec.push tac (Jump ("loopexit_" ^ loop_name));
     unit
