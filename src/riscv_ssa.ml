@@ -253,7 +253,11 @@ let rec sizeof ty =
 
   (* Optimized option uses special values to indicate None for integer types *)
   (* So the size is equal to the underlying integer type *)
-  (* | Mtype.T_optimized_option { elem } -> sizeof elem *)
+  | Mtype.T_optimized_option { elem } -> (match elem with 
+    | Mtype.T_char | Mtype.T_byte | Mtype.T_bool | Mtype.T_unit -> 4
+    | Mtype.T_int | Mtype.T_uint -> 8
+    | Mtype.T_constr _ -> sizeof elem
+    | _ -> failwith ("riscv_ssa.ml: cannot calculate size for optimized option with type: " ^ Mtype.to_string elem))
   
   (* Same size as the underlying type *)
   | Mtype.T_maybe_uninit x -> sizeof x
@@ -266,15 +270,15 @@ let rec sizeof ty =
 (** Emits SSA form. We choose a less human-readable form to facilitate verifier. *)
 let to_string t =
   let rtype op ({ rd; rs1; rs2 }: r_type) =
-    Printf.sprintf "%s %s:%s %s:%s %s:%s" op rd.name (Mtype.to_string rd.ty) rs1.name (Mtype.to_string rs1.ty) rs2.name (Mtype.to_string rs2.ty)
+    Printf.sprintf "%s %s %s %s" op rd.name rs1.name rs2.name
   in
 
   let r2type op ({ rd; rs1; }: r2_type) =
-    Printf.sprintf "%s %s:%s %s:%s" op rd.name (Mtype.to_string rd.ty) rs1.name (Mtype.to_string rs1.ty)
+    Printf.sprintf "%s %s %s" op rd.name rs1.name
   in
 
   let itype op ({ rd; rs; imm } : i_type) =
-    Printf.sprintf "%s %s:%s %s:%s %d" op rd.name (Mtype.to_string rd.ty) rs.name (Mtype.to_string rs.ty) imm
+    Printf.sprintf "%s %s %s %d" op rd.name rs.name imm
   in
 
   (* Deals with signedness: signed or unsigned *)
@@ -283,7 +287,7 @@ let to_string t =
     let width = (match rd.ty with
     | T_uint | T_uint64 -> "u"
     | _ -> "") in
-    Printf.sprintf "%s%s %s:%s %s:%s %s:%s" op width rd.name (Mtype.to_string rd.ty) rs1.name (Mtype.to_string rs1.ty) rs2.name (Mtype.to_string rs2.ty)
+    Printf.sprintf "%s%s %s %s %s" op width rd.name rs1.name rs2.name
   in
 
   (* Deals with width: 32 or 64 bit *)
@@ -291,7 +295,7 @@ let to_string t =
     let width = (match rd.ty with
     | T_int | T_uint -> "w"
     | _ -> "") in
-    Printf.sprintf "%s%s %s:%s %s:%s %s:%s" op width rd.name (Mtype.to_string rd.ty) rs1.name (Mtype.to_string rs1.ty) rs2.name (Mtype.to_string rs2.ty)
+    Printf.sprintf "%s%s %s %s %s" op width rd.name rs1.name rs2.name
   in
 
   (* Deals with both width and signedness *)
@@ -301,14 +305,14 @@ let to_string t =
     | T_uint -> "uw"
     | T_uint64 -> "u"
     | _ -> "") in
-    Printf.sprintf "%s%s %s:%s %s:%s %s:%s" op width rd.name (Mtype.to_string rd.ty) rs1.name (Mtype.to_string rs1.ty) rs2.name (Mtype.to_string rs2.ty)
+    Printf.sprintf "%s%s %s %s %s" op width rd.name rs1.name rs2.name
   in
 
   let itypew op ({ rd; rs; imm }: i_type) =
     let width = (match rd.ty with
     | T_int | T_uint -> "w"
     | _ -> "") in
-    Printf.sprintf "%s%s %s:%s %s:%s %d" op width rd.name (Mtype.to_string rd.ty) rs.name (Mtype.to_string rs.ty) imm
+    Printf.sprintf "%s%s %s %s %d" op width rd.name rs.name imm
   in
 
   (* Dedicated for slt *)
@@ -319,7 +323,7 @@ let to_string t =
     | T_int -> "sltiw"
     | T_uint64 -> "sltiuw"
     | _ -> "") in
-    Printf.sprintf "%s %s:%s %s:%s %d" width rd.name (Mtype.to_string rd.ty) rs.name (Mtype.to_string rs.ty) imm
+    Printf.sprintf "%s %s %s %d" width rd.name rs.name imm
   in
 
   (* Similarly, `srl` and `sra` are instructions where `rs` matters rather than `rd` *)
@@ -328,7 +332,7 @@ let to_string t =
     let width = (match rs.ty with
     | T_uint | T_int -> "w"
     | _ -> "") in
-    Printf.sprintf "%s%s %s:%s %s:%s %d" op width rd.name (Mtype.to_string rd.ty) rs.name (Mtype.to_string rs.ty) imm
+    Printf.sprintf "%s%s %s %s %d" op width rd.name rs.name imm
   in
 
   let die x =

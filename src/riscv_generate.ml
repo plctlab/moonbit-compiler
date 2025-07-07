@@ -146,8 +146,8 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
 
       (* But convert is where we must take some action *)
       else
-        let arg = List.hd args in 
-        let arg = { arg with ty = revert_optimized_option_type arg.ty } in
+        let arg = List.hd args in
+        (* let arg = { arg with ty = revert_optimized_option_type arg.ty } in *)
         (match from, to_ with
         | I32, U8 | U32, U8 ->
             (* Discard higher bits by masking them away *)
@@ -627,6 +627,9 @@ let record_traits (methods: Object_util.t) =
 (** Loop variables of the current loop. Used by Cexpr_continue. *)
 let loop_vars: var list ref = ref []
 
+(** Loop result value of the current loop. Used by Cexpr_break. *)
+let loop_result_value: var ref = ref { name = ""; ty = Mtype.T_unit } 
+
 (**
 This function stores the SSA generated in the given argument `tac`.
 
@@ -643,24 +646,33 @@ let rec do_convert tac (expr: Mcore.expr) =
 
       let is_global = Stringset.mem name !global_vars in
 
+      let is_fn = Stringset.mem name !fn_names in
+
       (* Mutable variables are treated as pointers. *)
       let is_pointer =
         (match id with Pmutable_ident _ -> true | _ -> false)
       in
 
-      if not is_pointer && not is_global then variable
-      else if is_global then (
+      if is_global then 
         let rd = new_temp ty in
         let label = new_temp Mtype.T_bytes in
         Vec.push tac (AssignLabel { rd = label; imm = name });
         Vec.push tac (Load { rd; rs = label; offset = 0; byte = sizeof ty });
         rd
-      ) else (
+      else if is_fn then 
+        let closure = new_temp Mtype.T_bytes in
+        let fptr = new_temp Mtype.T_bytes in
+        Vec.push tac (Malloc { rd = closure; size = sizeof Mtype.T_bytes });
+        Vec.push tac (AssignLabel { rd = fptr; imm = name });
+        Vec.push tac (Store { rd = fptr; rs = closure; offset = 0; byte = pointer_size });
+        closure
+      else if is_pointer then 
         let rd = new_temp ty in
         Vec.push tac (Load { rd; rs = variable; offset = 0; byte = sizeof ty });
         rd
-      )
-  
+      else 
+        variable
+
       
   (* A cast from a type into some trait. *)
   | Cexpr_object { self; methods_key = { trait; _ } ; _ } ->
@@ -744,7 +756,14 @@ let rec do_convert tac (expr: Mcore.expr) =
           Vec.push tac (Store { rd = rs; rs = rd; offset = 0; byte = sizeof rs.ty });
       
       | _ ->
+        (* (match rs.ty with
+        | Mtype.T_func _ -> 
           let rd = { name = Ident.to_string name; ty = rs.ty } in
+          Vec.push tac (AssignLabel { rd; imm = rs.name });
+        | _ ->
+          let rd = { name = Ident.to_string name; ty = rs.ty } in
+          Vec.push tac (Assign { rd; rs }))); *)
+        let rd = { name = Ident.to_string name; ty = rs.ty } in
           Vec.push tac (Assign { rd; rs }));
       do_convert tac body
 
@@ -891,13 +910,18 @@ let rec do_convert tac (expr: Mcore.expr) =
         jump head
 
       loop:
-        # body
+        # body (containing continue and break)
+        # merge results to result
         jump exit
 
       exit:
+        return result
   *)
-  | Cexpr_loop { params; body; args; label; _ } ->
+  | Cexpr_loop { params; body; args; label; ty; _ } ->
       let old_vars = !loop_vars in
+      let old_result = !loop_result_value in
+      if ty <> T_unit then 
+        loop_result_value := new_temp ty;
 
       (* Get the labels *)
       let loop = Printf.sprintf "loophead_%s_%d" label.name label.stamp in
@@ -922,13 +946,24 @@ let rec do_convert tac (expr: Mcore.expr) =
       Vec.push tac (Jump loop);
       Vec.push tac (Label loop);
 
-      let _ = do_convert tac body in
+      let result = do_convert tac body in
+      Vec.push tac (Assign { rd = !loop_result_value; rs = result });
       Vec.push tac (Jump exit);
       Vec.push tac (Label exit);
 
-      (* Store `loop_vars` back; let outer loop go on normally. *)
+      let result =
+        if ty = T_unit then unit
+        else !loop_result_value
+      in 
+
+      (* If this is a `Join`, then we must jump to the corresponding letfn *)
+
+      (* Store `loop_vars` and `loop_result_value` back; let outer loop go on normally. *)
       loop_vars := old_vars;
-      unit
+      if ty <> T_unit then 
+        loop_result_value := old_result;
+
+      result
 
   (* See the explanation for Cexpr_loop. *)
   | Cexpr_continue { args; label } ->
@@ -946,8 +981,11 @@ let rec do_convert tac (expr: Mcore.expr) =
       Vec.push tac (Jump loop_name);
       unit
 
-  | Cexpr_break { label; _ } ->
+  | Cexpr_break { label; arg; ty; _ } ->
     (* Jumps to exit of the loop. *)
+    Option.iter (fun arg -> Vec.push tac (Assign { rd = !loop_result_value; rs = do_convert tac arg})) arg;
+    
+    (* If this is a `Join`, then we must jump to the corresponding letfn *)
     let loop_name = Printf.sprintf "loophead_%s_%d" label.name label.stamp in
     Vec.push tac (Jump ("loopexit_" ^ loop_name));
     unit

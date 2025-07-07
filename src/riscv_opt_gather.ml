@@ -2,7 +2,7 @@
 open Riscv_opt
 open Riscv_ssa
 
-let opt tac =
+let opt_gather tac =
   Riscv_ssa.write_to_file "-no-opt.ssa" tac;
 
   List.iter (fun top -> match top with
@@ -12,10 +12,7 @@ let opt tac =
   iter_fn2 build_cfg tac;
   let ssa = Riscv_tac2ssa.ssa_of_tac tac in
 
-  Riscv_ssa.write_to_file "-opt0.ssa" ssa;
-
   for i = 1 to 3 do
-    Riscv_ssa.write_to_file (Printf.sprintf "-opt%d.ssa" i) ssa;
     Riscv_opt_inline.inline ssa;
     Riscv_opt_peephole.peephole ssa;
     Riscv_opt_escape.lower_malloc ssa;

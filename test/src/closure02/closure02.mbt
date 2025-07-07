@@ -28,5 +28,5 @@ fn create(n: Int) -> (Int) -> (Int) -> (Int) -> Unit {
 };
 
 fn main {
-    println(create(0)(0)(0)(0));
+  println(create(0)(0)(0)(0));
 };

@@ -171,24 +171,43 @@ let compute_every_inst_nextuse (bl : VBlockLabel.t) : int SlotMap.t Vec.t =
   nextUse
 ;;
 
-(* PartA: Initialize entryW for loop headers with back edges *)
 let initLoopHeader_entryW
-      (bl : VBlockLabel.t)
-      (loop_pred_vec : VBlockLabel.t Vec.t)
-      (cands : SlotSet.t)
-      (entryNextUse : int SlotMap.t)
+    (bl : VBlockLabel.t)
+    (loop_pred_vec : VBlockLabel.t Vec.t)
+    (cands : SlotSet.t)
+    (entryNextUse : int SlotMap.t)
   : unit
   =
-  let b_liveinfo = Liveness.get_liveinfo !live_info bl in
+  (* let b_liveinfo = Liveness.get_liveinfo !live_info bl in *)
   let binfo = get_spillinfo bl in
 
-  (* TODO: Currently only supports loops with one back edge, will allow multiple back edges later *)
-  if Vec.length loop_pred_vec <> 1
-  then failwith "initLoopHeader_entryW: loop_pred_vec length not equal to 1";
-  let loop_pred = loop_pred_vec.![0] in
-  let loop_liveinfo = Liveness.get_liveinfo !live_info loop_pred in
+  let loop_preds = Vec.to_list loop_pred_vec in
 
-  (*
+  let loop_liveinfos = List.map (fun lbl -> Liveness.get_liveinfo !live_info lbl) loop_preds in
+
+  (* Merge liveIn sets *)
+  let liveIn_I, liveIn_F =
+    List.fold_left
+      (fun (accI, accF) (liveinfo : Liveness.live_info) ->
+        let li_I, li_F = SlotSet.split_vars liveinfo.liveIn in
+        (SlotSet.union accI li_I, SlotSet.union accF li_F))
+      (SlotSet.empty, SlotSet.empty)
+      loop_liveinfos
+  in
+
+  (* Take the maximum register pressure seen on all back edge blocks *)
+  let maxPressure_I =
+    List.fold_left (fun acc (li : Liveness.live_info) -> max acc li.maxPressure_I) 0 loop_liveinfos
+  in
+  let maxPressure_F =
+    List.fold_left (fun acc (li : Liveness.live_info) -> max acc li.maxPressure_F) 0 loop_liveinfos
+  in
+
+  let entryNextUse_I, entryNextUse_F = SlotMap.split_vars entryNextUse in
+
+  let k_I, k_F = Reg.k, FReg.k in
+
+    (*
      At this point, Slot and FSlot need to be handled separately
   *)
   let split_init_entryW
@@ -201,45 +220,32 @@ let initLoopHeader_entryW
     : SlotSet.t
     =
     let entryW = ref SlotSet.empty in
-    (* 1. Get the set of active variables alive *)
     let alive = SlotSet.union liveIn cands in
-    (* 2. Try to allow variables that span the loop *)
     let liveThrough = SlotSet.diff alive cands in
-    if SlotSet.cardinal cands < k
-    then (
+    if SlotSet.cardinal cands < k then (
       entryW := SlotSet.union !entryW cands;
-
-      (* Compute the number of free slots available for liveThrough_I *)
       let freeLoopSlots = k - maxPressure + SlotSet.cardinal liveThrough in
-
-      (* TODO: Strictly speaking, this should be the maximum pressure inside the entire loop *)
-      if freeLoopSlots > 0
-      then (
+      if freeLoopSlots > 0 then (
         let sorted_liveThrough = sort_by_nextUse entryNextUse liveThrough () in
         List.iter
           (fun var -> entryW := SlotSet.add !entryW var)
-          (list_take freeLoopSlots sorted_liveThrough)))
-    else (
+          (list_take freeLoopSlots sorted_liveThrough)
+      )
+    ) else (
       let sorted_cands = sort_by_nextUse entryNextUse cands () in
-      List.iter (fun var -> entryW := SlotSet.add !entryW var) (list_take k sorted_cands));
+      List.iter (fun var -> entryW := SlotSet.add !entryW var) (list_take k sorted_cands)
+    );
     !entryW
   in
-  let liveIn_I, liveIn_F = SlotSet.split_vars b_liveinfo.liveIn in
-  let maxPressure_I, maxPressure_F =
-    loop_liveinfo.maxPressure_I, loop_liveinfo.maxPressure_F
-  in
-  let entryNextUse_I, entryNextUse_F = SlotMap.split_vars entryNextUse in
-  let k_I, k_F = Reg.k, FReg.k in
 
-  (* A-Handle integer variables *)
   let entryW_I =
     split_init_entryW entryNextUse_I liveIn_I liveIn_I cands maxPressure_I k_I
   in
 
-  (* B-Handle floating-point variables *)
   let entryW_F =
     split_init_entryW entryNextUse_F liveIn_F liveIn_F cands maxPressure_F k_F
   in
+
   let entryW = SlotSet.union entryW_I entryW_F in
   update_spillinfo bl { binfo with entryW };
   ()
