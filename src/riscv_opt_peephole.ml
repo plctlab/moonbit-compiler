@@ -116,6 +116,35 @@ let to_itype fn =
   in
   List.iter (fun block -> (block_of block).body <- convert block) blocks
 
+let purity_table = Hashtbl.create 64
+
+let rec is_pure fn =
+  match Hashtbl.find_opt purity_table fn with
+  | Some x -> x
+  | None ->
+      let global_vars = !Riscv_generate.global_vars in
+      let pure = 
+        let blocks = get_blocks fn in
+        List.for_all (fun block ->
+          List.for_all (fun x -> 
+            let is_global = ref false in
+            reg_iterd (fun var -> 
+              if Stringset.mem var.name global_vars then
+                is_global := true;
+              var) x;
+            not !is_global
+          ) (body_of block) &&
+          List.for_all (fun x -> match x with
+            | Call { fn = fn' } -> if fn <> fn' then is_pure fn' else true
+            | CallExtern _ | CallIndirect _ | Store _
+            | Malloc _ | Alloca _ -> false
+            | _ -> true) (body_of block)
+        ) blocks
+      in
+      Hashtbl.add purity_table fn pure;
+      (* Printf.printf "Checking purity of %s %s\n" fn (string_of_bool pure); *)
+      pure
+
 let remove_dead_variable fn =
   let blocks = get_blocks fn in
   let liveness = liveness_analysis fn in
@@ -140,7 +169,8 @@ let remove_dead_variable fn =
 
       (* TODO: refine this, so that calls to pure functions are also eliminated *)
       match x with
-      | Call _ | CallExtern _ | CallIndirect _ -> true
+      | Call { fn } when not (is_pure fn) -> true
+      | CallExtern _ | CallIndirect _ -> true
       | _ -> !preserve
     ) body;
     |> Basic_vec.of_list
