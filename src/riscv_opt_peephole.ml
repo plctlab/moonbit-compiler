@@ -123,8 +123,9 @@ let rec is_pure fn =
   | Some x -> x
   | None ->
       let global_vars = !Riscv_generate.global_vars in
+      let alloca_data = ref Stringset.empty in
+      let blocks = get_blocks fn in
       let pure = 
-        let blocks = get_blocks fn in
         List.for_all (fun block ->
           List.for_all (fun x -> 
             let is_global = ref false in
@@ -135,14 +136,15 @@ let rec is_pure fn =
             not !is_global
           ) (body_of block) &&
           List.for_all (fun x -> match x with
-            | Call { fn = fn' } -> if fn <> fn' then is_pure fn' else true
-            | CallExtern _ | CallIndirect _ | Store _
-            | Malloc _ | Alloca _ -> false
+            | Alloca { rd } -> alloca_data := Stringset.add rd.name !alloca_data; true
+            | Call { fn = fn' } -> if fn <> fn' then is_pure fn' else false
+            | Store { rs } -> Stringset.mem rs.name !alloca_data
+            | CallExtern _ | CallIndirect _ 
+            | Malloc _ -> false
             | _ -> true) (body_of block)
         ) blocks
       in
       Hashtbl.add purity_table fn pure;
-      (* Printf.printf "Checking purity of %s %s\n" fn (string_of_bool pure); *)
       pure
 
 let remove_dead_variable fn =
