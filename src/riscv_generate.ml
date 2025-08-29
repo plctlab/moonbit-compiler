@@ -402,7 +402,8 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       
       let altered = new_temp Mtype.T_string in
       Vec.push tac (Add { rd = altered; rs1 = str; rs2 = i });
-      Vec.push tac (Store { rd = item; rs = altered; offset = 0; byte = 1 })
+      Vec.push tac (Store { rd = item; rs = altered; offset = 0; byte = 1 });
+      Vec.push tac (Assign { rd; rs = unit })
 
   (* Be cautious that each `char` is 2 bytes long, which is extremely counter-intuitive. *)
   | Pgetstringitem ->
