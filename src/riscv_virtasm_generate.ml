@@ -375,26 +375,29 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
       terminator := Term.J (label_of label)
 
   | JumpIndirect { rs; possibilities } -> (* TODO: Optimizations on possibilities *)
-      terminator := Term.Jalr {
-        rd = Slot.Reg Zero;
-        rs1 = slot_v rs;
-        offset = 0;
-      };
+      if List.length possibilities = 1 then
+        terminator := Term.J (label_of (List.hd possibilities))
+      else
+        terminator := Term.Jalr {
+          rd = Slot.Reg Zero;
+          rs1 = slot_v rs;
+          offset = 0;
+        };
 
   (* Floating point instructions *)
+  | FAdd _ -> ()
+  | FSub _ -> ()
+  | FMul _ -> ()
+  | FDiv _ -> ()
+  | FLess _ -> ()
+  | FLeq _ -> ()
+  | FGreat _ -> ()
+  | FGeq _ -> ()
+  | FEq _ -> ()
+  | FNeq _ -> ()
+  | FNeg _ -> ()
+  | AssignFP _ -> ()
   (* 
-  | FAdd -> _
-  | FSub -> _
-  | FMul -> _
-  | FDiv -> _
-  | FLess -> _
-  | FLeq -> _
-  | FGreat -> _
-  | FGeq -> _
-  | FEq -> _
-  | FNeq -> _
-  | FNeg -> _
-  | AssignFP -> _
   | FnDecl -> _
   | GlobalVarDecl -> _
   | ExtArray _ -> _ *)
