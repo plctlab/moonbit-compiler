@@ -216,7 +216,7 @@ int64_t interpret(std::string label) {
             }
 
             if (op == "not") {
-                VAL(1) = ~VAL(2);
+                VAL(1) = VAL(2) == 0;
                 continue;
             }
 
