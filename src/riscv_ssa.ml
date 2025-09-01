@@ -283,10 +283,17 @@ let to_string t =
 
   (* Deals with signedness: signed or unsigned *)
   (* In most R-type instructions, `rd` and the 2 `rs`es have the same type *)
+
+  (* For unsigned comparison, `rd` may have different type *)
+  (* SSA interpreter relies on this function, so dealing with `most` is not enough *)
   let rtypeu op ({ rd; rs1; rs2 }: r_type) =
-    let width = (match rd.ty with
-    | T_uint | T_uint64 -> "u"
-    | _ -> "") in
+    let isu_rs1 = (match rs1.ty with
+    | T_uint | T_uint64 -> true
+    | _ -> false) in
+    let isu_rs2 = (match rs2.ty with
+    | T_uint | T_uint64 -> true
+    | _ -> false) in
+    let width = if (isu_rs1 && isu_rs2) then "u" else "" in
     Printf.sprintf "%s%s %s %s %s" op width rd.name rs1.name rs2.name
   in
 
@@ -406,7 +413,7 @@ let to_string t =
         Printf.sprintf "li %s %s" rd.name (Int64.to_string imm)
 
     | AssignFP { rd; imm; } ->
-        Printf.sprintf "fli %s = %f" rd.name imm
+        Printf.sprintf "fli %s %f" rd.name imm
     
     | AssignLabel { rd; imm; } ->
         Printf.sprintf "la %s %s" rd.name imm

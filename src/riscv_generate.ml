@@ -14,6 +14,9 @@ let global_vars = ref Stringset.empty
 (** The function/closure we're currently dealing with *)
 let current_function = ref ""
 
+(** The origin current function name. Used for judge whether a closure calls itself *)
+let current_base_name = ref ""
+
 (** The environment (i.e. the pointer passed to the closure) of current closure *)
 let current_env = ref unit
 
@@ -399,7 +402,8 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       
       let altered = new_temp Mtype.T_string in
       Vec.push tac (Add { rd = altered; rs1 = str; rs2 = i });
-      Vec.push tac (Store { rd = item; rs = altered; offset = 0; byte = 1 })
+      Vec.push tac (Store { rd = item; rs = altered; offset = 0; byte = 1 });
+      Vec.push tac (Assign { rd; rs = unit })
 
   (* Be cautious that each `char` is 2 bytes long, which is extremely counter-intuitive. *)
   | Pgetstringitem ->
@@ -806,14 +810,21 @@ let rec do_convert tac (expr: Mcore.expr) =
       (if Stringset.mem fn !fn_names then
         Vec.push tac (Call { rd; fn; args })
       else
-        (* Here `fn` is a closure *)
-        let closure = { name = fn; ty = Mtype.T_bytes } in
-        let fptr = new_temp Mtype.T_bytes in
-        Vec.push tac (Load { rd = fptr; rs = closure; offset = 0; byte = pointer_size });
+        if fn = !current_base_name then
+          let fptr = new_temp Mtype.T_bytes in
+          Vec.push tac (Load { rd = fptr; rs = !current_env; offset = 0; byte = pointer_size });
 
-        (* Closure, along with environment, should be passed as argument *)
-        let args = args @ [closure] in
-        Vec.push tac (CallIndirect { rd; rs = fptr; args }));
+          let args = args @ [!current_env] in
+          Vec.push tac (CallIndirect { rd; rs = fptr; args });
+        else
+          (* Here `fn` is a closure *)
+          let closure = { name = fn; ty = Mtype.T_bytes } in
+          let fptr = new_temp Mtype.T_bytes in
+          Vec.push tac (Load { rd = fptr; rs = closure; offset = 0; byte = pointer_size });
+
+          (* Closure, along with environment, should be passed as argument *)
+          let args = args @ [closure] in
+          Vec.push tac (CallIndirect { rd; rs = fptr; args }));
 
       (* If this is a `Join`, then we must jump to the corresponding letfn *)
       if kind = Join then (
@@ -1081,6 +1092,7 @@ let rec do_convert tac (expr: Mcore.expr) =
       (* This is a different function from the current one, *)
       (* so we must protect all global variables before generating body *)
       let this_fn = !current_function in
+      let this_base_fn = !current_base_name in
       let this_env = !current_env in
       let this_join = !current_join in
       let this_join_ret = !current_join_ret in
@@ -1088,6 +1100,7 @@ let rec do_convert tac (expr: Mcore.expr) =
       (* Set the correct values for this new function *)
       let fn_name = Printf.sprintf "%s_closure_%s" !current_function name in
       current_function := fn_name;
+      current_base_name := name;
       current_env := fn_env;
       current_join := "";
       current_join_ret := unit;
@@ -1098,6 +1111,7 @@ let rec do_convert tac (expr: Mcore.expr) =
 
       (* Put them back *)
       current_function := this_fn;
+      current_base_name := this_base_fn;
       current_env := this_env;
       current_join := this_join;
       current_join_ret := this_join_ret;
@@ -1122,7 +1136,7 @@ let rec do_convert tac (expr: Mcore.expr) =
       (* Store environment variables *)
       List.iter2 (fun (arg: var) offset ->
         let size = sizeof arg.ty in
-        if arg.name = !current_function then
+        if arg.name = !current_base_name then
           (* This closure captures myself, so I need to make myself a closure *)
           (* Fortunately my environment is just my closure *)
           Vec.push tac (Store { rd = !current_env; rs = closure; offset = offset - size; byte = size })
@@ -1720,6 +1734,7 @@ let convert_toplevel _start (top: Mcore.top_item) =
       let args = List.map var_of_param func.params in
 
       current_function := fn;
+      current_base_name := fn;
       let body = convert_expr func.body in
 
       (* Record the index of arguments that are traits *)

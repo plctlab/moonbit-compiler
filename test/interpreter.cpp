@@ -19,7 +19,6 @@ std::map<std::string, std::vector<std::string>> blocks;
 std::map<std::string, std::vector<std::string>> fns;
 
 // Values of registers used when interpreting.
-// TODO: currently no FP supported.
 std::map<std::string, int64_t> regs;
 std::map<std::string, int64_t> labels;
 
@@ -64,13 +63,35 @@ int int_of(std::string s) {
 #define RTYPEU(name, op) std::make_pair(name, [](int64_t x, int64_t y) { return (uint64_t)x op (uint64_t)y; })
 #define RTYPEUW(name, op) std::make_pair(name, [](int64_t x, int64_t y) { return (unsigned)x op (unsigned)y; })
 #define ITYPEW(name, op) std::make_pair(name, [](int64_t x, int imm) -> int64_t { return (int)x op imm; })
+#define RTYPEF(name, op) std::make_pair(name, [](int64_t x, int64_t y) { \
+    double fx, fy; \
+    std::memcpy(&fx, &x, 8); \
+    std::memcpy(&fy, &y, 8); \
+    double fres = fx op fy; \
+    int64_t res; \
+    std::memcpy(&res, &fres, 8); \
+    return res; \
+ })
+#define RTYPEFCMP(name, op) std::make_pair(name, [](int64_t x, int64_t y) { \
+    double fx, fy; \
+    std::memcpy(&fx, &x, 8); \
+    std::memcpy(&fy, &y, 8); \
+    int64_t res = fx op fy; \
+    return res; \
+ })
 #define VAL(i) regs[args[i]]
 
 #ifdef VERBOSE
 #define OUTPUT(name, value) std::cerr << "\t" << name << " = " << value << "\n\n"
+#define OUTPUTF(name, value) \
+    double fvalue; \
+    std::memcpy(&fvalue, &value, 8); \
+    std::cerr << "\t" << name << " = " << fvalue << "\n\n" 
+
 #define SAY(str) std::cerr << str << "\n"
 #else
 #define OUTPUT(name, value)
+#define OUTPUTF(name, value)
 #define SAY(str)
 #endif
 
@@ -118,6 +139,19 @@ int64_t interpret(std::string label) {
         RTYPEUW("moduw", %),
     };
 
+    static std::map<std::string, std::function<int64_t (int64_t, int64_t)>> rtypef = {
+        RTYPEF("fadd", +),
+        RTYPEF("fsub", -),
+        RTYPEF("fmul", *),
+        RTYPEF("fdiv", /),
+        RTYPEFCMP("fle", <),
+        RTYPEFCMP("fleq", <=),
+        RTYPEFCMP("fge", >),
+        RTYPEFCMP("fgeq", >=),
+        RTYPEFCMP("feq", ==),
+        RTYPEFCMP("fneq", !=),
+    };
+
     static std::map<std::string, std::function<int64_t (int64_t, int)>> load = {
         MEM("lb", char),
         MEM("lh", char16_t),
@@ -155,6 +189,12 @@ int64_t interpret(std::string label) {
             if (rtype.contains(op)) {
                 VAL(1) = rtype[op](VAL(2), VAL(3));
                 OUTPUT(args[1], VAL(1));
+                continue;
+            }
+
+            if (rtypef.contains(op)) {
+                VAL(1) = rtypef[op](VAL(2), VAL(3));
+                OUTPUTF(args[1], VAL(1));
                 continue;
             }
 
@@ -215,8 +255,17 @@ int64_t interpret(std::string label) {
                 continue;
             }
 
+            if (op == "fneg") {
+                int64_t val = VAL(2);
+                double fval;
+                std::memcpy(&fval, &val, 8);
+                fval = -fval;
+                std::memcpy(&VAL(1), &fval, 8);
+                continue;
+            }
+
             if (op == "not") {
-                VAL(1) = ~VAL(2);
+                VAL(1) = VAL(2) == 0;
                 continue;
             }
 
@@ -376,6 +425,18 @@ int64_t interpret(std::string label) {
 
                 VAL(1) = rs;
                 OUTPUT(args[1], VAL(1));
+                continue;
+            }
+
+            if (op == "fli"){
+                std::stringstream ss(args[2]);
+                double rs;
+                ss >> rs;
+
+                int64_t rs_int;
+                std::memcpy(&rs_int, &rs, 8);
+                VAL(1) = rs_int;
+                OUTPUT(args[1], rs);
                 continue;
             }
 
