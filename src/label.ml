@@ -54,6 +54,9 @@ let to_wasm_name (t : t) =
   Stdlib.String.concat "" [ "$"; t.name; "/"; Int.to_string t.stamp ]
 ;;
 
+let to_string t = t.name ^ "/" ^ string_of_int t.stamp
+let basename t = t.name
+
 let to_wasm_label_loop t =
   let x = t.stamp in
   ("$loop:" ^ Int.to_string x : Stdlib.String.t)

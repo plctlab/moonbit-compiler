@@ -13,18 +13,22 @@
 *)
 
 
+module Index_set = Basic_diet.Make (Int)
+
+type constr_repr = Non_constant | Constant | Integer of int
+
 type constr_tag =
   | Constr_tag_regular of {
-      total : int; [@ceh.ignore]
+      total : Index_set.t; [@ceh.ignore]
       index : int;
-      is_constant_ : bool; [@ceh.ignore]
+      repr_ : constr_repr; [@ceh.ignore]
       name_ : string; [@ceh.ignore]
     }
   | Extensible_tag of {
       pkg : string;
       type_name : string;
       name : string;
-      total : int; [@ceh.ignore]
+      total : Index_set.t; [@ceh.ignore]
       index : int; [@ceh.ignore]
     }
 
@@ -81,7 +85,7 @@ end
 
 let sexp_of_constr_tag (tag : constr_tag) =
   match tag with
-  | Constr_tag_regular { name_; total = _; index = _; is_constant_ = _ } ->
+  | Constr_tag_regular { name_; total = _; index = _; repr_ = _ } ->
       (List
          (List.cons
             (Atom "Constr_tag_regular" : S.t)

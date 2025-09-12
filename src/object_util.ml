@@ -58,16 +58,6 @@ let sexp_of_object_method_item { method_id; method_prim; method_ty; } =
   let x = S.List [ S.Atom "method_id"; Ident.sexp_of_t method_id ] :: x in
   S.List x
 
-let get_trait_methods ~(trait : Type_path.t) ~stype_defs =
-  let trait =
-    match trait with
-    | Toplevel { pkg; id } ->
-        let types = Basic_hash_string.find_exn stype_defs pkg in
-        Typing_info.find_trait_exn types id
-    | _ -> assert false
-  in
-  trait.closure_methods
-
 type object_info = { self_ty : Mtype.t; methods : object_method_item list }
 
 let sexp_of_object_info =
