@@ -387,7 +387,7 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       (* The whole set of args (including self) is needed. *)
       Vec.push tac (CallIndirect { rd; rs = fptr; args })
 
-  | Pgetbytesitem ->
+  | Pgetbytesitem { safe = _ } ->
       let str = List.nth args 0 in
       let i = List.nth args 1 in
       
@@ -395,7 +395,7 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       Vec.push tac (Add { rd = altered; rs1 = str; rs2 = i });
       Vec.push tac (Load { rd; rs = altered; offset = 0; byte = 1 })
 
-  | Psetbytesitem ->
+  | Psetbytesitem { safe = _ } ->
       let str = List.nth args 0 in
       let i = List.nth args 1 in
       let item = List.nth args 2 in
@@ -406,7 +406,7 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       Vec.push tac (Assign { rd; rs = unit })
 
   (* Be cautious that each `char` is 2 bytes long, which is extremely counter-intuitive. *)
-  | Pgetstringitem ->
+  | Pgetstringitem { safe = _ } ->
       let str = List.nth args 0 in
       let i = List.nth args 1 in
       
@@ -550,8 +550,6 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
   | Primitive.Praise -> _
   | Primitive.Punreachable -> _
   | Primitive.Pcatch -> _
-  | Primitive.Psequand -> _
-  | Primitive.Psequor -> _
   | Primitive.Pclosure_to_extern_ref -> _
   | Primitive.Pnull_string_extern -> _
   | Primitive.Perror_to_string -> _
@@ -703,45 +701,6 @@ let rec do_convert tac (expr: Mcore.expr) =
   | Cexpr_prim { prim; args; ty; _ } ->
       let rd = new_temp ty in
       (match prim, args with
-      | Psequand, [rs1; rs2] ->
-          (* Short circuiting, compile into if-else *)
-          (* rd = rs1 && rs2 -> rd = if (rs1) rs2 else false *)
-          let ifso = new_label "sequand_if_" in
-          let ifnot = new_label "sequand_else_" in
-          let ifexit = new_label "sequand_exit_" in
-          let cond = do_convert tac rs1 in
-          Vec.push tac (Branch { cond; ifso; ifnot });
-
-          Vec.push tac (Label ifso);
-          let rs = do_convert tac rs2 in
-          Vec.push tac (Assign { rd; rs });
-          Vec.push tac (Jump ifexit);
-
-          Vec.push tac (Label ifnot);
-          Vec.push tac (AssignInt { rd; imm = 0; });
-          Vec.push tac (Jump ifexit);
-
-          Vec.push tac (Label ifexit)
-
-      | Psequor, [rs1; rs2] ->
-          (* Short circuiting, compile into if-else *)
-          (* rd = rs1 || rs2 -> rd = if (rs1) true else rs2 *)
-          let ifso = new_label "sequor_if_" in
-          let ifnot = new_label "sequor_else_" in
-          let ifexit = new_label "sequor_exit_" in
-          let cond = do_convert tac rs1 in
-          Vec.push tac (Branch { cond; ifso; ifnot });
-
-          Vec.push tac (Label ifso);
-          Vec.push tac (AssignInt { rd; imm = 1; });
-          Vec.push tac (Jump ifexit);
-
-          Vec.push tac (Label ifnot);
-          let rs = do_convert tac rs2 in
-          Vec.push tac (Assign { rd; rs });
-          Vec.push tac (Jump ifexit);
-
-          Vec.push tac (Label ifexit);
 
       | _ -> 
           let args = List.map (fun expr -> do_convert tac expr) args in
@@ -836,9 +795,9 @@ let rec do_convert tac (expr: Mcore.expr) =
         rd
       )
   
-  | Cexpr_sequence { expr1; expr2; _ } ->
-      do_convert tac expr1 |> ignore;
-      do_convert tac expr2
+  | Cexpr_sequence { exprs; last_expr; _ } ->
+      List.iter (fun expr -> do_convert tac expr |> ignore) exprs;
+      do_convert tac last_expr
 
   (* Meaning: access the `pos`-th field of `record` *)
   (* Here `record` might be a record type or a tuple *)
@@ -854,7 +813,7 @@ let rec do_convert tac (expr: Mcore.expr) =
             rd
           
         | Mtype.T_tuple { tys } ->
-            let precede = Basic_lst.take pos tys in
+            let precede = Basic_lst.take tys pos in
             let sizes = List.map sizeof precede in
             let offset = List.fold_left (fun acc x -> acc + x) 0 sizes in
             Vec.push tac (Load { rd; rs; offset; byte });
@@ -1059,7 +1018,7 @@ let rec do_convert tac (expr: Mcore.expr) =
       Vec.push tac (Malloc { rd; size });
 
       let args = List.map (fun x -> do_convert tac x) exprs in
-      let sizes = List.map (fun x -> sizeof x.ty) args |> Basic_lst.take (List.length args - 1) in
+      let sizes = List.map (fun x -> sizeof x.ty) args |> fun list -> Basic_lst.take list (List.length args - 1) in
       let offsets = 0 :: Basic_lst.cumsum sizes in
       List.iter2 (fun arg offset ->
         Vec.push tac (Store { rd = arg; rs = rd; offset; byte = sizeof arg.ty })
@@ -1201,7 +1160,7 @@ let rec do_convert tac (expr: Mcore.expr) =
       (* Then store all arguments *)
       List.iter2 (fun arg offset ->
         Vec.push tac (Store { rd = arg; rs = rd; offset = 4 + offset; byte = sizeof arg.ty })  
-      ) args (Basic_lst.take len offsets);
+      ) args (Basic_lst.take offsets len);
       rd
 
   | Cexpr_switch_constr { obj; cases; default; ty; _ } ->
@@ -1489,7 +1448,7 @@ let rec do_convert tac (expr: Mcore.expr) =
           List.iter (fun x ->
             Vec.push vec (Char.code x);
             Vec.push vec 0) vals;
-          let values = len :: Vec.map_into_list vec Int.to_string in
+          let values = len :: Vec.map_into_list vec ~unorder:Int.to_string in
 
           slot := !slot + 1;
           (* Each of them is still a single byte, since we separated strings into two bytes *)
@@ -1526,12 +1485,14 @@ let rec do_convert tac (expr: Mcore.expr) =
           Vec.push tac (AssignFP { rd; imm = v; })
       | C_double { v; _ } ->
           Vec.push tac (AssignFP { rd; imm = v; })
+      | C_byte { v; _ } ->
+          Vec.push tac (AssignInt { rd; imm = v })
       | C_bigint _ -> failwith "TODO: riscv_ssa.ml: bigint not supported"
       );
       rd
 
   | Cexpr_function _ ->
-      Printf.printf "unconverted: %s\n" (Mcore.sexp_of_expr expr |> S.to_string);
+      Printf.printf "unconverted: Cexpr_function\n";
       failwith "riscv_generate.ml: Cexpr_function should have been converted into letfn"
 
 let generate_vtables () =
@@ -1575,7 +1536,7 @@ let rec iter_expr f (expr: Mcore.expr) =
   | Cexpr_mutate { record; field } -> go record; go field
   | Cexpr_array { exprs } -> List.iter go exprs
   | Cexpr_assign { expr } -> go expr
-  | Cexpr_sequence { expr1; expr2 } -> go expr1; go expr2
+  | Cexpr_sequence { exprs; last_expr; _ } -> List.iter go exprs; go last_expr
   | Cexpr_if { cond; ifso; ifnot } -> go cond; go ifso; Option.iter go ifnot
   | Cexpr_switch_constr { obj; cases; default } -> go obj; List.iter (fun (a, b, c) -> go c) cases; Option.iter go default
   | Cexpr_switch_constant { obj; cases; default } -> go obj; List.iter (fun (a, b) -> go b) cases; go default
@@ -1631,8 +1592,8 @@ let rec map_expr f (expr: Mcore.expr) =
   | Cexpr_assign ({ expr } as x) ->
       Mcore.Cexpr_assign { x with expr = go expr }
 
-  | Cexpr_sequence ({ expr1; expr2 } as x) ->
-      Mcore.Cexpr_sequence { x with expr1 = go expr1; expr2 = go expr2 }
+  | Cexpr_sequence ({ exprs; last_expr; _ } as x) ->
+      Mcore.Cexpr_sequence { x with exprs = List.map go exprs; last_expr = go last_expr }
 
   | Cexpr_if ({ cond; ifso; ifnot } as x) ->
       Mcore.Cexpr_if { x with cond = go cond; ifso = go ifso; ifnot = Option.map go ifnot }

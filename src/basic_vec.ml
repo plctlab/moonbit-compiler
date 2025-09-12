@@ -33,7 +33,6 @@ open struct
     if tag (repr a) = double_array_tag
     then Array.fill (as_float_arr a) i len 0.
     else Array.fill (as_obj_arr a) i len (Obj.repr ())
-  ;;
 end
 
 external unsafe_sub : 'a array -> int -> int -> 'a array = "caml_array_sub"
@@ -73,6 +72,7 @@ let sort d cmp =
   d.len <- Array.length arr
 ;;
 
+let of_array src = { len = Array.length src; arr = Array.copy src }
 let reverse_in_place src = Arr.reverse_range src.arr 0 src.len
 
 let iter f d =
@@ -117,7 +117,7 @@ let map_into_array f src =
     arr)
 ;;
 
-let map_into_list src f =
+let map_into_list src ~unorder:f =
   let src_len = src.len in
   let src_arr = src.arr in
   if src_len = 0
@@ -185,10 +185,21 @@ let set d i v =
 
 let capacity d = Array.length d.arr [@@inline]
 
+let map f src =
+  let src_len = src.len in
+  if src_len = 0 then { len = 0; arr = [||] }
+  else
+    let src_arr = src.arr in
+    let first = f src_arr.!(0) in
+    let arr = Array.make src_len first in
+    for i = 1 to src_len - 1 do
+      arr.!(i) <- f src_arr.!(i)
+    done;
+    { len = src_len; arr }
+
 let make ~dummy initsize : 'a t =
   if initsize < 0 then invalid_arg __FUNCTION__;
   { len = 0; arr = Array.make initsize dummy }
-;;
 
 let push (d : 'a t) v =
   let d_len = d.len in
@@ -240,7 +251,6 @@ let pop_opt (d : 'a t) : 'a option =
     fill_with_junk_ d_arr last_index 1;
     d.len <- last_index;
     Some last)
-;;
 
 let pop (d : 'a t) : 'a =
   let d_len = d.len in
@@ -253,7 +263,6 @@ let pop (d : 'a t) : 'a =
     fill_with_junk_ d_arr last_index 1;
     d.len <- last_index;
     last)
-;;
 
 (*
    Example usage of array-like operators:
@@ -273,4 +282,3 @@ let ( .![]<- ) d i v = set d i v
 let clear (d : 'a t) : unit =
   fill_with_junk_ d.arr 0 d.len;
   d.len <- 0
-;;
