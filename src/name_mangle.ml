@@ -74,7 +74,8 @@ let make_type_name (t : Mtype.t) =
          go err;
          buf +>> ">";
          (match !Basic_config.target with
-          | Wasm_gc -> buf +>> Mtype.id_to_string id)
+          | Wasm_gc -> buf +>> Mtype.id_to_string id
+          | Riscv -> ())
    and gos (sep : char) = function
      | [] -> ()
      | ty :: [] -> go ty

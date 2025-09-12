@@ -300,12 +300,13 @@ let analyze_cases (ty : Stype.t) (cases : Typedtree.match_case list)
      && catch_all_loc = None && not only_check_unused_pat
    then
      let empty_match = cases = [] in
-     Vec.iter missing_cases (fun db ->
+     Vec.iter (fun db ->
          let ps =
            Patmatch_static_info.synthesize_missing_case_pattern db ~genv
              ~empty_match ty
          in
-         Basic_lst.iter ps ~f:(fun p -> Vec.push patterns p)));
+         Basic_lst.iter ps ~f:(fun p -> Vec.push patterns p))
+       missing_cases);
   (book, cases_reachability, patterns, Vec.length missing_cases = 0)
 
 let get_missing_case_patterns (ty : Stype.t) (cases : Typedtree.match_case list)

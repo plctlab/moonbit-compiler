@@ -458,7 +458,7 @@ let load_direct_uses (tbl : pkg_tbl) (values : Typing_info.values)
         | Ptop_funcdef { fun_decl = { name; type_name = None; _ }; _ } ->
             Hashset_string.add local_values name.binder_name
         | Ptop_funcdef { fun_decl = { type_name = Some _; _ }; _ } -> ());
-    Vec.iter use_all_mi (fun mi_view ->
+    Vec.iter (fun (mi_view : Pkg_info.mi_view) ->
         Hash_string.iter2 mi_view.values (fun id ->
             fun vd ->
              match Typing_info.find_value values id with
@@ -509,7 +509,8 @@ let load_direct_uses (tbl : pkg_tbl) (values : Typing_info.values)
                Hash_string.add type_alias id alias);
         Hash_string.iter mi_view.external_type_alias (fun (id, alias) ->
             if not (Hashset_string.mem local_types id) then
-              Hash_string.add type_alias id alias)))
+              Hash_string.add type_alias id alias))
+      use_all_mi)
 
 let report_unused ~diagnostics (tbl : pkg_tbl) =
   (let is_core pkg =

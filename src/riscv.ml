@@ -54,4 +54,4 @@ let to_asm_string asm =
   | Label _ -> to_string asm
   | _ -> "    " ^ to_string asm
   
-let generate ssa = []
+let generate _ssa = []

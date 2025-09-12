@@ -56,6 +56,7 @@ type context = {
   elems : elem Vec.t;
   datas : data Vec.t;
   tags : tag Vec.t;
+  aux : Dwarfsm_ast.extra_info;
 }
 
 let make_space () = { next_index = 0; map = Hash_string.create 0 }
@@ -86,4 +87,5 @@ let make_context () =
     elems = Vec.empty ();
     datas = Vec.empty ();
     tags = Vec.empty ();
+    aux = { low_pc = 0; high_pc = 0 };
   }

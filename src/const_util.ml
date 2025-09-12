@@ -184,7 +184,7 @@ let typing_const_decls (const_decls : Local_typing_worklist.const_decl Vec.t)
     ~global_env ~diagnostics =
   let decls = Hash_string.create (Vec.length const_decls) in
   let toplevel_env = Global_env.get_toplevel_values global_env in
-  Vec.iter const_decls (fun decl ->
+  Vec.iter (fun decl ->
       let name = decl.binder.binder_name in
       match Hash_string.find_opt decls name with
       | Some (`Unresolved (prev_def : Local_typing_worklist.const_decl)) ->
@@ -202,7 +202,8 @@ let typing_const_decls (const_decls : Local_typing_worklist.const_decl Vec.t)
                    ~constr_loc:constr.cs_loc_
                    ~const_loc:(Rloc.to_loc ~base:decl.loc_ decl.binder.loc_))
           | [] -> ());
-          Hash_string.add decls decl.binder.binder_name (`Unresolved decl));
+          Hash_string.add decls decl.binder.binder_name (`Unresolved decl))
+    const_decls;
   let visitor =
     object (self)
       inherit [_] Syntax.iter

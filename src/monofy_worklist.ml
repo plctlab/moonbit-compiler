@@ -258,10 +258,11 @@ let order_globals (worklist : t)
     (globals : (Ident.t * Mcore.expr * bool * Loc.t) Vec.t) =
   (let indexed_globals = Basic_hash_int.create 17 in
    let res = Vec.empty () in
-   Vec.iter globals (fun ((id, _, _, _) as global) ->
+   Vec.iter (fun ((id, _, _, _) as global) ->
        match Ident.Hash.find_opt worklist.dependency id with
        | Some (index, _) -> Basic_hash_int.add indexed_globals index global
-       | None -> Vec.push res global);
+       | None -> Vec.push res global)
+     globals;
    if Vec.length res = Vec.length globals then res
    else
      let nodes_num = Ident.Hash.length worklist.dependency in
@@ -273,11 +274,12 @@ let order_globals (worklist : t)
                  Vec_int.push dep_graph.(src_index) tgt_index
              | None -> ()));
      let scc = Basic_scc.graph dep_graph in
-     Vec.iter scc (fun c ->
+     Vec.iter (fun c ->
          Vec_int.iter c (fun i ->
              match Basic_hash_int.find_opt indexed_globals i with
              | Some global -> Vec.push res global
-             | None -> ()));
+             | None -> ()))
+       scc;
      res
     : (Ident.t * Mcore.expr * bool * Loc.t) Vec.t)
 
@@ -312,8 +314,9 @@ let add_any_to_string (worklist : t) (monofy_env : Monofy_env.t) (ty : Stype.t)
     | T_trait _ | Tarrow _ | Tvar _ | Tparam _ | T_blackhole -> false
   in
   if resolve_by_type ty then
-    Basic_vec.iter local_cache (fun (mi, ty) ->
+    Basic_vec.iter (fun (mi, ty) ->
         ignore (add_value_if_not_exist worklist mi.id [| ty |]))
+      local_cache
 
 let transl_any_to_string (worklist : t) (ty : Stype.t) =
   (let ty = Stype.type_repr ty in

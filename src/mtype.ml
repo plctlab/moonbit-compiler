@@ -588,117 +588,10 @@ let from_stype (stype : Stype.t) ~(stype_defs : Typing_info.stype_defs)
          let constr =
            let tag = Tag.of_core_tag mtype_defs.ext_tags c.cs_tag in
            let payload =
-             Lst.mapi c.cs_args (fun i ->
-                 fun ty ->
-                  let field_type = go ty in
-                  { field_type; name = field_indexed i; mut = false })
+             Lst.mapi c.cs_args (fun i ty ->
+                 let field_type = go ty in
+                 { field_type; name = Indexed i; mut = false })
            in
-<<<<<<< HEAD
-           add_trait_def s trait_info);
-        T_trait s
-  and add_type_def (stype : Stype.t) (mid : id) (decl : Typedecl_info.t) =
-    Id_hash.add mtype_defs.defs mid Placeholder;
-    match decl.ty_desc with
-    | Extern_type -> Id_hash.replace mtype_defs.defs mid Externref
-    | Abstract_type | New_type _ -> ()
-    | Error_type c -> (
-        Id_hash.replace mtype_defs.defs mid Variant_constr;
-        let constr =
-          let tag = Tag.of_core_tag mtype_defs.ext_tags c.cs_tag in
-          let payload =
-            Lst.mapi c.cs_args (fun i ty ->
-                let field_type = go ty in
-                { field_type; name = Indexed i; mut = false })
-          in
-          { payload; tag }
-        in
-        match Id_hash.find_opt mtype_defs.defs error_mid with
-        | None ->
-            Id_hash.add mtype_defs.defs error_mid
-              (Variant { constrs = [ constr ] })
-        | Some (Variant { constrs = cs }) ->
-            Id_hash.replace mtype_defs.defs error_mid
-              (Variant { constrs = constr :: cs })
-        | _ -> assert false)
-    | ErrorEnum_type cs -> (
-        Id_hash.replace mtype_defs.defs mid Variant_constr;
-        let constrs =
-          Lst.map cs (fun c ->
-              let tag = Tag.of_core_tag mtype_defs.ext_tags c.cs_tag in
-              let arity = c.cs_arity_ in
-              let payload =
-                Fn_arity.to_list_map2 arity c.cs_args (fun param_kind ty ->
-                    let field_type = go ty in
-                    match param_kind with
-                    | Labelled { label; is_mut = mut; _ } ->
-                        { field_type; name = Named label; mut }
-                    | Positional index ->
-                        { field_type; name = Indexed index; mut = false }
-                    | Optional _ | Autofill _ | Question_optional _ ->
-                        assert false)
-              in
-              { payload; tag })
-        in
-        match Id_hash.find_opt mtype_defs.defs error_mid with
-        | None -> Id_hash.add mtype_defs.defs error_mid (Variant { constrs })
-        | Some (Variant { constrs = cs }) ->
-            Id_hash.replace mtype_defs.defs error_mid
-              (Variant { constrs = constrs @ cs })
-        | _ -> assert false)
-    | Record_type { fields = fs } ->
-        let _, fs' =
-          Poly_type.instantiate_record ~ty_record:(`Known stype) fs
-        in
-        let fields =
-          Lst.map fs' (fun f ->
-              {
-                field_type = go f.ty_field;
-                name = Named f.field_name;
-                mut = f.mut;
-              })
-        in
-        Id_hash.replace mtype_defs.defs mid (Record { fields })
-    | Variant_type cs ->
-        let constrs =
-          Lst.map cs (fun c ->
-              let tag = Tag.of_core_tag_no_ext c.cs_tag in
-              let arity = c.cs_arity_ in
-              let enum_ty, constr_tys = Poly_type.instantiate_constr c in
-              Ctype.unify_exn stype enum_ty;
-              let payload =
-                Fn_arity.to_list_map2 arity constr_tys (fun param_kind ty ->
-                    let field_type = go ty in
-                    match param_kind with
-                    | Labelled { label; is_mut = mut; _ } ->
-                        { field_type; name = Named label; mut }
-                    | Positional index ->
-                        { field_type; name = Indexed index; mut = false }
-                    | Optional _ | Autofill _ | Question_optional _ ->
-                        assert false)
-              in
-              { payload; tag })
-        in
-        Id_hash.replace mtype_defs.defs mid (Variant { constrs })
-  and add_trait_def (mid : id) (decl : Trait_decl.t) =
-    Id_hash.add mtype_defs.defs mid Placeholder;
-    let methods =
-      Lst.mapi decl.closure_methods (fun i (_, m) ->
-          match m.method_typ with
-          | Stype.Tarrow { params_ty = _ :: params_ty; ret_ty; err_ty } ->
-              let params_ty = Lst.map params_ty go in
-              let return_ty =
-                match err_ty with
-                | None -> go ret_ty
-                | Some err_ty ->
-                    go (Stype.make_multi_value_result_ty ~ok_ty:ret_ty ~err_ty)
-              in
-              { params_ty; return_ty; index = i; name = m.method_name }
-          | _ -> assert false)
-    in
-    Id_hash.replace mtype_defs.defs mid (Trait { methods })
-  in
-  go stype
-=======
            { payload; tag }
          in
          match Id_hash.find_opt mtype_defs.defs error_mid with
@@ -725,7 +618,7 @@ let from_stype (stype : Stype.t) ~(stype_defs : Typing_info.stype_defs)
                       | Positional index ->
                           {
                             field_type;
-                            name = field_indexed index;
+                            name = Indexed index;
                             mut = false;
                           }
                       | Optional _ | Autofill _ | Question_optional _ ->
@@ -769,7 +662,7 @@ let from_stype (stype : Stype.t) ~(stype_defs : Typing_info.stype_defs)
                       | Positional index ->
                           {
                             field_type;
-                            name = field_indexed index;
+                            name = Indexed index;
                             mut = false;
                           }
                       | Optional _ | Autofill _ | Question_optional _ ->
@@ -802,7 +695,6 @@ let from_stype (stype : Stype.t) ~(stype_defs : Typing_info.stype_defs)
    in
    go stype
     : t)
->>>>>>> e9147a7afacd1e4da2d3c7f20d3c5ac42078d6e5
 
 let is_func (t : t) =
   (match t with

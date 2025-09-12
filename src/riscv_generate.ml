@@ -387,7 +387,7 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       (* The whole set of args (including self) is needed. *)
       Vec.push tac (CallIndirect { rd; rs = fptr; args })
 
-  | Pgetbytesitem ->
+  | Pgetbytesitem { safe = _ } ->
       let str = List.nth args 0 in
       let i = List.nth args 1 in
       
@@ -395,7 +395,7 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       Vec.push tac (Add { rd = altered; rs1 = str; rs2 = i });
       Vec.push tac (Load { rd; rs = altered; offset = 0; byte = 1 })
 
-  | Psetbytesitem ->
+  | Psetbytesitem { safe = _ } ->
       let str = List.nth args 0 in
       let i = List.nth args 1 in
       let item = List.nth args 2 in
@@ -406,7 +406,7 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
       Vec.push tac (Assign { rd; rs = unit })
 
   (* Be cautious that each `char` is 2 bytes long, which is extremely counter-intuitive. *)
-  | Pgetstringitem ->
+  | Pgetstringitem { safe = _ } ->
       let str = List.nth args 0 in
       let i = List.nth args 1 in
       
@@ -836,9 +836,12 @@ let rec do_convert tac (expr: Mcore.expr) =
         rd
       )
   
-  | Cexpr_sequence { expr1; expr2; _ } ->
-      do_convert tac expr1 |> ignore;
-      do_convert tac expr2
+  | Cexpr_sequence { exprs; _ } ->
+      match exprs with
+      | [expr1; expr2] ->
+          do_convert tac expr1 |> ignore;
+          do_convert tac expr2
+      | _ -> assert false
 
   (* Meaning: access the `pos`-th field of `record` *)
   (* Here `record` might be a record type or a tuple *)

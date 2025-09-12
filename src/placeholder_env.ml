@@ -122,7 +122,7 @@ let make ~foreign_types ~type_defs ~trait_defs ~trait_alias =
                 Hash_string.find_exn object_safety_of_traits name <> []
                 && name <> name0
               then Vec.push not_object_safe_supers path;
-              Lst.iter decl.trait_supers (fun super ->
+              Lst.iter decl.trait_supers ~f:(fun super ->
                   match super.tvc_trait with
                   | Lident name -> add_trait name
                   | Ldot _ as id -> add_foreign_trait id))
@@ -145,7 +145,7 @@ let make ~foreign_types ~type_defs ~trait_defs ~trait_alias =
       let object_safety_status =
         List.append
           (Hash_string.find_exn object_safety_of_traits name)
-          (Vec.map_into_list not_object_safe_supers (fun super ->
+          (Vec.map_into_list not_object_safe_supers ~unorder:(fun super ->
                Trait_decl.Bad_super_trait super))
       in
       let info =
@@ -186,7 +186,7 @@ let newtype_in_cycle (env : t) (name : string) =
    go name
     : bool)
 
-type trait_info =
+type trait_location_info =
   | Local_trait of Type_path.t * Syntax.trait_decl
   | Foreign_trait of Trait_decl.t
 

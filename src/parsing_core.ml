@@ -246,7 +246,7 @@ let push_sync (state : parse_state) (sync : token_kind) =
   Vec.push state.syncs sync
 
 let pop_sync (state : parse_state) (sync : token_kind) =
-  match Vec.pop_no_compact state.syncs with
+  match Vec.pop_opt state.syncs with
   | Some x -> (
       if x <> sync then failwith "unmatched sync token!";
       match state.mode with

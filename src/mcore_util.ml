@@ -15,6 +15,7 @@
 
 module Ident = Basic_core_ident
 module Ident_set = Ident.Set
+module Lst = Basic_lst
 
 let free_vars ~(exclude : Ident.Set.t) (fn : Mcore.fn) =
   (let go_ident ~env ~acc (id : Ident.t) ty =

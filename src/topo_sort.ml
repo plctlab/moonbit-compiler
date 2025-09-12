@@ -69,20 +69,20 @@ let topo_sort ~diagnostics (defs : Typedtree.output) =
   let extract_vars (impl_info : Ident.t impl_info) : binder_vars impl_info =
     let impl = impl_info.impl in
     match impl with
-    | Timpl_fun_decl { fun_decl = { fn; _ }; _ } ->
+    | Timpl_fun_decl { fun_decl = { fn = _; _ }; _ } ->
         {
           impl;
           info = { binder = impl_info.info; vars = vars_of_impl impl tbl };
         }
     | Timpl_stub_decl _ ->
         { impl; info = { binder = impl_info.info; vars = Ident.Set.empty } }
-    | Timpl_letdef { expr; loc_; _ } ->
+    | Timpl_letdef { expr = _; loc_; _ } ->
         let binder = impl_info.info in
         let vars = vars_of_impl impl tbl in
         if Ident.Set.exists vars (fun v -> Ident.equal binder v) then
           add_cycle [ (binder, loc_) ];
         { impl; info = { binder; vars } }
-    | Timpl_expr { expr; is_main = _; expr_id = _ } ->
+    | Timpl_expr { expr = _; is_main = _; expr_id = _ } ->
         {
           impl;
           info = { binder = impl_info.info; vars = vars_of_impl impl tbl };
@@ -120,7 +120,7 @@ let topo_sort ~diagnostics (defs : Typedtree.output) =
      add_cycle cycle
       : unit)
   in
-  Vec.iter scc (fun c -> if has_cycle c then handle_cycle c);
+  Vec.iter (fun c -> if has_cycle c then handle_cycle c) scc;
   let value_defs =
     Lst.concat
       (Vec.map_into_list scc ~unorder:(fun c ->

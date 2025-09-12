@@ -546,11 +546,11 @@ let reg_iter fd fs t =
 
 (** Iterate on `rd` only. *)
 let reg_iterd fd t =
-  reg_iter fd (fun x -> x) t
+  reg_iter fd (fun _ -> ()) t
 
 (** Iterate on `rs` only. *)
 let reg_iters fs t =
-  reg_iter (fun x -> x) fs t
+  reg_iter (fun _ -> ()) fs t
 
 (** Counter of temporaries. *)
 let slot = ref 0

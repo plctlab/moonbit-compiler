@@ -179,7 +179,9 @@ let wasm_gc_whitelist = []
 
 let check_inlinewasm (func : Dwarfsm_ast.func) =
   let whitelist =
-    match !Basic_config.target with Wasm_gc -> wasm_gc_whitelist
+    match !Basic_config.target with 
+    | Wasm_gc -> wasm_gc_whitelist
+    | Riscv -> []
   in
   Dwarfsm_instr_utils.iter func.code (fun instr ->
       match instr with
@@ -225,6 +227,7 @@ let from_syntax ~loc ~diagnostics (stub : Syntax.func_stubs) =
                                 let backend =
                                   match !Basic_config.target with
                                   | Wasm_gc -> "wasm_gc"
+                                  | Riscv -> "riscv"
                                 in
                                 let warning_msg =
                                   (Stdlib.String.concat ""
@@ -255,7 +258,10 @@ let from_syntax ~loc ~diagnostics (stub : Syntax.func_stubs) =
                               { loc; kind = Invalid_inline_wasm warning_msg };
                             Ok
                               (Inline_code_sexp { language = "wasm"; func_body })
-                        | _ -> assert false))
+                        | _ -> assert false)
+                    | Riscv -> 
+                        (* RISC-V backend doesn't support inline WASM *)
+                        Ok (Internal { func_name = s }))
                 | _ -> Ok (Internal { func_name = s })
                 | exception Dwarfsm_sexp_parse_error.Unmatched_parenthesis (l, r)
                   ->
