@@ -75,7 +75,7 @@ moon bundle --source-dir $core
 bundled=$core/target/wasm-gc/release/bundle
 
 # 这里 main.mbt 是一个含有 `fn main` 的文件。
-moonc build-package $src/main.mbt -is-main -std-path $core/target/$bundled -o $obj -target $target
+moonc build-package $src/main.mbt -is-main -std-path $bundled -o $obj
 
 # 如果有不止一个包，别忘了在 -pkg-sources 里指定所有包的路径。
 moonc link-core $bundled/core.core $obj -o $dest -pkg-config-path $src/moon.pkg.json -pkg-sources $core:$src -target $target
@@ -85,6 +85,42 @@ moonc link-core $bundled/core.core $obj -o $dest -pkg-config-path $src/moon.pkg.
 
 如果你仍有疑问，可以参考 `moon run --dry-run` 的输出。
 
+## 使用wasm版的MoonBit编译器
+
+首先需要安装nodejs和curl, 然后在任意的临时目录下执行以下命令
+
+```shell
+curl -fSL -O https://github.com/moonbitlang/moonbit-compiler/releases/latest/download/moonbit-wasm.tar.gz
+tar -zxvf moonbit-wasm.tar.gz
+mkdir -p $HOME/.moon
+MOON_VERSION=$(cat ./moon_version)
+MOON_HOME="$HOME/.moon"
+BIN_DIR="$MOON_HOME/bin"
+mkdir -p "$BIN_DIR"
+git clone https://github.com/moonbitlang/moon
+cd moon
+git reset --hard "$MOON_VERSION"
+cargo build --release
+cp target/release/moon "$BIN_DIR"
+cp target/release/moonrun "$BIN_DIR"
+cd ..
+sed -i '1 i #!/usr/bin/env -S node --stack-size=4096' moonc.js
+sed -i '1 i #!/usr/bin/env -S node --stack-size=4096' moonfmt.js
+sed -i '1 i #!/usr/bin/env -S node --stack-size=4096' mooninfo.js
+cp moonc.js moonfmt.js mooninfo.js moonc.assets moonfmt.assets mooninfo.assets "$BIN_DIR" -r
+mv "$BIN_DIR/moonc.js" "$BIN_DIR/moonc"
+mv "$BIN_DIR/moonfmt.js" "$BIN_DIR/moonfmt"
+mv "$BIN_DIR/mooninfo.js" "$BIN_DIR/mooninfo"
+chmod +x "$BIN_DIR/moonc"
+chmod +x "$BIN_DIR/moonfmt"
+chmod +x "$BIN_DIR/mooninfo"
+cp lib include "$MOON_HOME"
+CORE_VERSION=$(cat ./core_version)
+git clone https://github.com/moonbitlang/core "$MOON_HOME/lib/core"
+cd "$MOON_HOME/lib/core"
+git reset --hard "$CORE_VERSION"
+moon bundle --target all
+```
 ## 贡献
 
 这个项目正在快速演进，因此还没有准备好接受大量社区贡献。

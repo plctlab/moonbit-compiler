@@ -854,7 +854,7 @@ let rec do_convert tac (expr: Mcore.expr) =
             rd
           
         | Mtype.T_tuple { tys } ->
-            let precede = Basic_lst.take pos tys in
+            let precede = Basic_lst.take tys pos in
             let sizes = List.map sizeof precede in
             let offset = List.fold_left (fun acc x -> acc + x) 0 sizes in
             Vec.push tac (Load { rd; rs; offset; byte });
@@ -1059,7 +1059,7 @@ let rec do_convert tac (expr: Mcore.expr) =
       Vec.push tac (Malloc { rd; size });
 
       let args = List.map (fun x -> do_convert tac x) exprs in
-      let sizes = List.map (fun x -> sizeof x.ty) args |> Basic_lst.take (List.length args - 1) in
+      let sizes = List.map (fun x -> sizeof x.ty) args |> fun list -> Basic_lst.take list (List.length args - 1) in
       let offsets = 0 :: Basic_lst.cumsum sizes in
       List.iter2 (fun arg offset ->
         Vec.push tac (Store { rd = arg; rs = rd; offset; byte = sizeof arg.ty })
@@ -1201,7 +1201,7 @@ let rec do_convert tac (expr: Mcore.expr) =
       (* Then store all arguments *)
       List.iter2 (fun arg offset ->
         Vec.push tac (Store { rd = arg; rs = rd; offset = 4 + offset; byte = sizeof arg.ty })  
-      ) args (Basic_lst.take len offsets);
+      ) args (Basic_lst.take offsets len);
       rd
 
   | Cexpr_switch_constr { obj; cases; default; ty; _ } ->

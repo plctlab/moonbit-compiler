@@ -62,12 +62,16 @@ let current_package = ref default_package_name
 let current_import_map : string Basic_map_string.t ref = ref Map_string.empty
 let builtin_package = "moonbitlang/core/builtin"
 let debug = ref false
+let no_opt = ref false
 let use_block_params = ref true
 let test_mode = ref false
 let std_path = ref ""
 let export_memory_name : string option ref = ref None
 let import_memory_module : string option ref = ref None
 let import_memory_name : string option ref = ref None
+let memory_limits_min : int option ref = ref None
+let memory_limits_max : int option ref = ref None
+let shared_memory : bool ref = ref false
 let heap_memory_start = ref 10_000
 let target = ref Wasm_gc
 let js_format = ref Esm
@@ -75,11 +79,33 @@ let error_format = ref Human
 let leak_check = ref false
 let memory_safety_check = ref false
 let use_js_builtin_string = ref false
-let blackbox_test_import_all = ref false
+let blackbox_test_import_all_default = true
+let blackbox_test_import_all = ref blackbox_test_import_all_default
 let const_string_module_name = ref "_"
 
+type parser_select = [ `Menhir | `Handrolled | `Both ]
+
+let parser : parser_select ref = ref `Both
 let verbose = ref false
 
+let parse_symbol_exn s =
+  parser :=
+    match s with
+    | "yacc" -> `Menhir
+    | "hand" -> `Handrolled
+    | "both" -> `Both
+    | _ -> assert false
+
+let current_parser () = !parser
+let symbols = [ "yacc"; "hand"; "both" ]
+
+let current_parser_display () =
+  match !parser with
+  | `Menhir -> "yacc"
+  | `Handrolled -> "hand"
+  | `Both -> "both"
+
 type env = Release | Debug
+
 let env = Release
 let block_line = "///|"
