@@ -26,6 +26,7 @@ end
 type attribute =
   | Tattr_alert of { loc_ : location; category : string; message : string }
   | Tattr_intrinsic of { loc_ : location; intrinsic : string }
+  | Tattr_alias of { loc_ : location; alias_name : string }
 
 include struct
   let _ = fun (_ : attribute) -> ()
@@ -66,6 +67,18 @@ include struct
            (S.List [ S.Atom "loc_"; arg__010_ ] :: bnds__008_ : _ Stdlib.List.t)
          in
          S.List (S.Atom "Tattr_intrinsic" :: bnds__008_)
+     | Tattr_alias { loc_ = loc___014_; alias_name = alias_name__016_ } ->
+         let bnds__013_ = ([] : _ Stdlib.List.t) in
+         let bnds__013_ =
+           let arg__017_ = Moon_sexp_conv.sexp_of_string alias_name__016_ in
+           (S.List [ S.Atom "alias_name"; arg__017_ ] :: bnds__013_
+             : _ Stdlib.List.t)
+         in
+         let bnds__013_ =
+           let arg__015_ = sexp_of_location loc___014_ in
+           (S.List [ S.Atom "loc_"; arg__015_ ] :: bnds__013_ : _ Stdlib.List.t)
+         in
+         S.List (S.Atom "Tattr_alias" :: bnds__013_)
       : attribute -> S.t)
 
   let _ = sexp_of_attribute
@@ -131,6 +144,14 @@ let check ~local_diagnostics
                 | `TopFun ->
                     Tattr_alert { loc_; category; message = message.string_val }
                     :: acc)
+            | Apply
+                ( { qual = None; name = "alias" },
+                  Expr (String { string_val = alias_name; _ }) :: [] ) -> (
+                match context with
+                | `TopLet | `TopTypeDecl | `Impl | `Trait ->
+                    warn_unused_attribute "alias";
+                    acc
+                | `TopFun -> Tattr_alias { loc_; alias_name } :: acc)
             | _ -> acc)
         | _ -> acc)
     : t)

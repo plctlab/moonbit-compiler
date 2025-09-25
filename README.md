@@ -27,8 +27,6 @@ Building a programming language is a long journey. It took Rust 9 years and Go 5
 - OCaml 4.14.2
 - [OPAM](https://opam.ocaml.org/)
 
-You must update or revert MoonBit to [this version](https://github.com/moonbitlang/core/commit/4660d8b3da6ed79e47462d66d40feff177060699), as the syntax of the language has changed since.
-
 ### Build
 
 Build with following scripts:
@@ -57,9 +55,8 @@ To set up the environment, execute these commands (you only need to do it once):
 # Remove currently installed MoonBit version
 rm -rf $core
 
-# Install the specific version required by the compiler
+# Install the latest version of core library
 git clone https://github.com/moonbitlang/core.git $core
-git checkout 4660d8b
 
 # Compile the core library
 moon bundle --source-dir $core

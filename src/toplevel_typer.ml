@@ -1205,6 +1205,13 @@ let typing_types_and_traits (impls : Syntax.impl list)
       Local_diagnostics.add_to_global local_diagnostics diagnostics);
   (type_decls, trait_decls, tast_of_trait_alias)
 
+(* Extract alias names from attributes *)
+let extract_aliases_from_attrs (attrs : Typedtree.attributes) =
+  List.fold_left attrs [] ~f:(fun acc attr ->
+    match attr with
+    | Checked_attributes.Tattr_alias { alias_name; _ } -> alias_name :: acc
+    | _ -> acc)
+
 let add_method (type_name : Type_path.t) (fun_type : Stype.t)
     (meth : Syntax.binder) is_pub ~is_trait ~(doc : Docstring.t)
     ~(attrs : Typedtree.attributes) ~(types : Global_env.All_types.t) ~tvar_env
@@ -1287,7 +1294,12 @@ let add_method (type_name : Type_path.t) (fun_type : Stype.t)
           param_names_ = param_names;
         }
       in
-      Method_env.add_method method_env ~type_name ~method_name ~method_info);
+      (* Register the original method name *)
+      Method_env.add_method method_env ~type_name ~method_name ~method_info;
+      (* Register all aliases *)
+      let aliases = extract_aliases_from_attrs attrs in
+      List.iter aliases ~f:(fun alias_name ->
+        Method_env.add_method method_env ~type_name ~method_name:alias_name ~method_info));
    id
     : Qual_ident.t)
 
