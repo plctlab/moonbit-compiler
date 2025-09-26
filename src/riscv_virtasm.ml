@@ -328,12 +328,12 @@ module Inst = struct
     | FsqrtD assign_fslot | FabsD assign_fslot | FnegD assign_fslot | FmvD assign_fslot ->
       rd assign_fslot.frd @ rs assign_fslot.frs
     | Fld mem_fslot | Fsd mem_fslot -> rd mem_fslot.frd @ rs mem_fslot.base
-    | La assign_label -> []
-    | Li assign_int64 -> []
+    | La _assign_label -> []
+    | Li _assign_int64 -> []
     | Mv assign_slot | Sextw assign_slot | Zextw assign_slot ->
       rd assign_slot.rd @ rs assign_slot.rs
     | FmvDX assign_direct -> rd assign_direct.frd @ rs assign_direct.rs
-    | FmvDXZero single_fslot -> []
+    | FmvDXZero _single_fslot -> []
     | Call call_data ->
       rd call_data.rd
       @ List.concat_map rs call_data.args
@@ -349,8 +349,8 @@ module Inst = struct
     | Alloca alloca -> rd alloca.rd
   ;;
 
-  let get_srcs (inst : t) : Slot.t list = inst_map inst (fun x -> []) (fun x -> [ x ])
-  let get_dests (inst : t) : Slot.t list = inst_map inst (fun x -> [ x ]) (fun x -> [])
+  let get_srcs (inst : t) : Slot.t list = inst_map inst (fun _ -> []) (fun x -> [ x ])
+  let get_dests (inst : t) : Slot.t list = inst_map inst (fun x -> [ x ]) (fun _ -> [])
   let generate_reload (var : Slot.t) : t = Reload { target = var; origin = var }
   let generate_spill (var : Slot.t) : t = Spill { target = var; origin = var }
 
@@ -534,9 +534,9 @@ module Term = struct
   ;;
 
   (* Keep these functions for API consistency *)
-  let get_dests (term : t) : Slot.t list = []
-  let adjust_rec_alloc_I (term : t) (pre_K : int) : int = pre_K
-  let adjust_rec_alloc_F (term : t) (pre_K : int) : int = pre_K
+  let get_dests (_term : t) : Slot.t list = []
+  let adjust_rec_alloc_I (_term : t) (pre_K : int) : int = pre_K
+  let adjust_rec_alloc_F (_term : t) (pre_K : int) : int = pre_K
 
   let to_string t =
     let s = Slot.to_string in

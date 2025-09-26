@@ -1207,7 +1207,7 @@ let typing_types_and_traits (impls : Syntax.impl list)
 
 (* Extract alias names from attributes *)
 let extract_aliases_from_attrs (attrs : Typedtree.attributes) =
-  List.fold_left attrs [] ~f:(fun acc attr ->
+  Basic_lst.fold_left attrs [] (fun acc attr ->
     match attr with
     | Checked_attributes.Tattr_alias { alias_name; _ } -> alias_name :: acc
     | _ -> acc)
@@ -1298,7 +1298,7 @@ let add_method (type_name : Type_path.t) (fun_type : Stype.t)
       Method_env.add_method method_env ~type_name ~method_name ~method_info;
       (* Register all aliases *)
       let aliases = extract_aliases_from_attrs attrs in
-      List.iter aliases ~f:(fun alias_name ->
+      Basic_lst.iter aliases ~f:(fun alias_name ->
         Method_env.add_method method_env ~type_name ~method_name:alias_name ~method_info));
    id
     : Qual_ident.t)

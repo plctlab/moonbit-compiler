@@ -129,10 +129,9 @@ let rec is_pure fn =
         List.for_all (fun block ->
           List.for_all (fun x -> 
             let is_global = ref false in
-            reg_iterd (fun var -> 
+            reg_iterd (fun var ->
               if Stringset.mem var.name global_vars then
-                is_global := true;
-              var) x;
+                is_global := true) x;
             not !is_global
           ) (body_of block) &&
           List.for_all (fun x -> match x with

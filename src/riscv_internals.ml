@@ -21,7 +21,7 @@ fn unsafe_bytes_blit (dst, dst_offset, src, src_offset, length) {
   return %3
 }
 *)
-let unsafe_bytes_blit fn =
+let unsafe_bytes_blit _fn =
   (* Construct arguments *)
   let dst = new_temp T_bytes in
   let dst_offset = new_temp T_int in
@@ -66,7 +66,7 @@ fn unsafe_bytes_sub_string (src, offset, length) {
   return %3
 }
 *)
-let unsafe_bytes_sub_string fn =
+let unsafe_bytes_sub_string _fn =
   (* Arguments *)
   let src = new_temp T_bytes in
   let offset = new_temp T_int in
