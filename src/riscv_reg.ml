@@ -74,11 +74,17 @@ module Reg = struct
   ;;
 
   (* Reg寄存器最大可分配数量*)
-  let k = 32
+  let k = 11
 
   (* 用于调用者保存寄存器*)
   let caller_saved_regs =
     [ Ra; T0; T1; T2; A0; A1; A2; A3; A4; A5; A6; A7; T3; T4; T5; T6 ]
+  ;;
+  let callee_saved_regs =
+    [ S1; S2; S3; S4; S5; S6; S7; S8; S9; S10; S11 ]
+  ;;
+
+  let spill_reg = T0
   ;;
 end
 

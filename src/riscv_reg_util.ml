@@ -75,6 +75,7 @@ module Liveness = struct
     ; liveIn : SlotSet.t
     ; liveOut : SlotSet.t
     ; exitNextUse : int SlotMap.t
+    ; entryNextUse : int SlotMap.t
     }
 
   (** 
@@ -90,6 +91,7 @@ module Liveness = struct
     ; liveIn = SlotSet.empty
     ; liveOut = SlotSet.empty
     ; exitNextUse = SlotMap.empty
+    ; entryNextUse = SlotMap.empty
     }
   ;;
 
@@ -151,7 +153,7 @@ module Liveness = struct
              (* liveOut = union of successors' liveIn *)
              b_liveOut := SlotSet.union !b_liveOut succ_info.liveIn;
              (* exitNextUse = accumulate based on successors' entryNextUse *)
-             SlotMap.iter succ_info.exitNextUse (fun slot dist_in_succ ->
+             SlotMap.iter succ_info.entryNextUse (fun slot dist_in_succ ->
                let new_dist = sat_add dist_in_succ 1 in
                match SlotMap.find_opt !b_exitNextUse slot with
                | Some old_d ->
@@ -221,6 +223,7 @@ module Liveness = struct
           ; liveIn = !b_liveIn
           ; liveOut = !b_liveOut
           ; exitNextUse = !b_exitNextUse
+          ; entryNextUse = !b_entryNextUse
           }
         in
         (*

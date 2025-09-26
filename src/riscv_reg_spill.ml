@@ -301,6 +301,9 @@ let initUsual_entryW
   let entryW_I = split_init_entryW freqs_I cands_I entryNextUse_I k_I in
   let entryW_F = split_init_entryW freqs_F cands_F entryNextUse_F k_F in
   let entryW = SlotSet.union entryW_I entryW_F in
+  let entryW = SlotSet.filter entryW (fun var -> match var with
+    | Slot.Slot _ | Slot.FSlot _ -> true
+    | _ -> false) in
   update_spillinfo bl { binfo with entryW };
   ()
 ;;
@@ -335,7 +338,7 @@ let init_entryW (bl : VBlockLabel.t) (entryNextUse : int SlotMap.t) =
          Vec.push normal_pred pred_bl;
          let pred_info = get_spillinfo pred_bl in
          SlotSet.iter pred_info.exitW (fun var ->
-           match SlotMap.find_opt b_liveinfo.exitNextUse var with
+           match SlotMap.find_opt b_liveinfo.entryNextUse var with
            | Some dist ->
              if not_inf dist
              then (
@@ -372,6 +375,9 @@ let init_entryS (bl : VBlockLabel.t) =
        entryS := SlotSet.union !entryS pred_info.exitS)
     preds;
   entryS := SlotSet.inter !entryS binfo.entryW;
+  entryS := SlotSet.filter !entryS (fun var -> match var with
+    | Slot.Slot _ | Slot.FSlot _ -> true
+    | _ -> false);
   update_spillinfo bl { binfo with entryS = !entryS };
   ()
 ;;
@@ -393,6 +399,9 @@ let append_spill_to_pred_block (bl : VBlockLabel.t) =
 
          (* a-Reload instructions at the end of the predecessor block *)
          let need_reload = SlotSet.diff entryW pred_info.exitW in
+         let need_reload = SlotSet.filter need_reload (fun var -> match var with
+           | Slot.Slot _ | Slot.FSlot _ -> true
+           | _ -> false) in
          let reload_insts = generate_trailing_reload need_reload in
          Vec.append block.body reload_insts;
 
@@ -424,9 +433,9 @@ let limit_func
     (fun var ->
        if
          (not (SlotSet.mem !s var))
-         && SlotMap.find_default nextUse.![i] var max_int < max_int
+         (* && SlotMap.find_default nextUse.![i] var max_int < max_int *)
        then spill := SlotSet.add !spill var;
-       s := SlotSet.remove !s var;
+       s := SlotSet.add !s var;
        w := SlotSet.remove !w var;
        nextUse.![i] <- SlotMap.remove nextUse.![i] var)
     (list_drop k sorted_w)
@@ -462,6 +471,10 @@ let apply_min_algorithm (bl : VBlockLabel.t) (nextUse : int SlotMap.t Vec.t) =
         (adjust_k : int)
     =
     let reload = ref (SlotSet.diff srcs !w) in
+    (* reload := SlotSet.filter !reload (fun var -> (Option.is_none @@ SlotMap.find_opt !reg_map var)); *)
+    reload := SlotSet.filter !reload (fun var -> match var with
+      | Slot.Slot _ | Slot.FSlot _ -> true
+      | _ -> false);
     let spill = ref SlotSet.empty in
     let protected = srcs in
     (* At this point, protected protects the registers being used *)
@@ -469,7 +482,7 @@ let apply_min_algorithm (bl : VBlockLabel.t) (nextUse : int SlotMap.t Vec.t) =
     (* a. Compute the variables that need to be reloaded *)
     SlotSet.iter !reload (fun var ->
       w := SlotSet.add !w var;
-      s := SlotSet.add !s var);
+      s := SlotSet.remove !s var);
     (* Adjust the maximum number of allocatable registers *)
 
     (* b. Leave registers for src *)
@@ -480,8 +493,8 @@ let apply_min_algorithm (bl : VBlockLabel.t) (nextUse : int SlotMap.t Vec.t) =
     (* Further reduce k *)
 
     (* d. Add defs to w_I *)
-    SlotSet.iter dests (fun var -> w := SlotSet.add !w var);
-    let protected = dests in
+    SlotSet.iter dests (fun var -> w := SlotSet.add !w var; s := SlotSet.remove !s var);
+    let protected = SlotSet.union dests protected in
     (* At this point, protected protects the registers being defined *)
     if i <> body_size then
       limit_func nextUse w s spill protected (i + 1) adjust_k;

@@ -286,6 +286,96 @@ module Inst = struct
     (* Stack Allocation Directive *)
     | Alloca of alloca
 
+  (* TODO : Refactor *)
+  let inst_convert (inst : t) (f : Slot.t -> Slot.t) : t = 
+    match inst with
+    | Add { rd; rs1; rs2 } -> Add { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Addw { rd; rs1; rs2 } -> Addw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Sub { rd; rs1; rs2 } -> Sub { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Subw { rd; rs1; rs2 } -> Subw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Mul { rd; rs1; rs2 } -> Mul { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Mulw { rd; rs1; rs2 } -> Mulw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Div { rd; rs1; rs2 } -> Div { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Divw { rd; rs1; rs2 } -> Divw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Divu { rd; rs1; rs2 } -> Divu { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Divuw { rd; rs1; rs2 } -> Divuw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Rem { rd; rs1; rs2 } -> Rem { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Remw { rd; rs1; rs2 } -> Remw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Remu { rd; rs1; rs2 } -> Remu { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Remuw { rd; rs1; rs2 } -> Remuw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Sextw { rd; rs } -> Sextw { rd = f rd; rs = f rs }
+    | Zextw { rd; rs } -> Zextw { rd = f rd; rs = f rs }
+    | Addi { rd; rs1; imm } -> Addi { rd = f rd; rs1 = f rs1; imm }
+    | Addiw { rd; rs1; imm } -> Addiw { rd = f rd; rs1 = f rs1; imm }
+    | And { rd; rs1; rs2 } -> And { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Or { rd; rs1; rs2 } -> Or { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Xor { rd; rs1; rs2 } -> Xor { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Andi { rd; rs1; imm } -> Andi { rd = f rd; rs1 = f rs1; imm }
+    | Ori { rd; rs1; imm } -> Ori { rd = f rd; rs1 = f rs1; imm }
+    | Xori { rd; rs1; imm } -> Xori { rd = f rd; rs1 = f rs1; imm }
+    | Slt { rd; rs1; rs2 } -> Slt { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Sltw { rd; rs1; rs2 } -> Sltw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Sltu { rd; rs1; rs2 } -> Sltu { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Sltuw { rd; rs1; rs2 } -> Sltuw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Slti { rd; rs1; imm } -> Slti { rd = f rd; rs1 = f rs1; imm }
+    | Sltiw { rd; rs1; imm } -> Sltiw { rd = f rd; rs1 = f rs1; imm }
+    | Sll { rd; rs1; rs2 } -> Sll { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Sllw { rd; rs1; rs2 } -> Sllw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Srl { rd; rs1; rs2 } -> Srl { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Srlw { rd; rs1; rs2 } -> Srlw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Sra { rd; rs1; rs2 } -> Sra { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Sraw { rd; rs1; rs2 } -> Sraw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+    | Slli { rd; rs1; imm } -> Slli { rd = f rd; rs1 = f rs1; imm }
+    | Slliw { rd; rs1; imm } -> Slliw { rd = f rd; rs1 = f rs1; imm }
+    | Srli { rd; rs1; imm } -> Srli { rd = f rd; rs1 = f rs1; imm }
+    | Srliw { rd; rs1; imm } -> Srliw { rd = f rd; rs1 = f rs1; imm }
+    | Srai { rd; rs1; imm } -> Srai { rd = f rd; rs1 = f rs1; imm }
+    | Sraiw { rd; rs1; imm } -> Sraiw { rd = f rd; rs1 = f rs1; imm }
+    | Lb { rd; base; offset } -> Lb { rd = f rd; base = f base; offset }
+    | Lbu { rd; base; offset } -> Lbu { rd = f rd; base = f base; offset }
+    | Lh { rd; base; offset } -> Lh { rd = f rd; base = f base; offset }
+    | Lhu { rd; base; offset } -> Lhu { rd = f rd; base = f base; offset }
+    | Lw { rd; base; offset } -> Lw { rd = f rd; base = f base; offset }
+    | Ld { rd; base; offset } -> Ld { rd = f rd; base = f base; offset }
+    | Sb { rd; base; offset } -> Sb { rd = f rd; base = f base; offset }
+    | Sh { rd; base; offset } -> Sh { rd = f rd; base = f base; offset }
+    | Sw { rd; base; offset } -> Sw { rd = f rd; base = f base; offset }
+    | Sd { rd; base; offset } -> Sd { rd = f rd; base = f base; offset }
+    | FaddD { frd; frs1; frs2 } -> FaddD { frd = f frd; frs1 = f frs1; frs2 = f frs2 }
+    | FsubD { frd; frs1; frs2 } -> FsubD { frd = f frd; frs1 = f frs1; frs2 = f frs2 }
+    | FmulD { frd; frs1; frs2 } -> FmulD { frd = f frd; frs1 = f frs1; frs2 = f frs2 }
+    | FdivD { frd; frs1; frs2 } -> FdivD { frd = f frd; frs1 = f frs1; frs2 = f frs2 }
+    | FmaddD { frd; frs1; frs2; frs3 } -> FmaddD { frd = f frd; frs1 = f frs1; frs2 = f frs2; frs3 = f frs3 }
+    | FmsubD { frd; frs1; frs2; frs3 } -> FmsubD { frd = f frd; frs1 = f frs1; frs2 = f frs2; frs3 = f frs3 }
+    | FnmaddD { frd; frs1; frs2; frs3 } -> FnmaddD { frd = f frd; frs1 = f frs1; frs2 = f frs2; frs3 = f frs3 }
+    | FnmsubD { frd; frs1; frs2; frs3 } -> FnmsubD { frd = f frd; frs1 = f frs1; frs2 = f frs2; frs3 = f frs3 }
+    | FeqD { rd; frs1; frs2 } -> FeqD { rd = f rd; frs1 = f frs1; frs2 = f frs2 }
+    | FltD { rd; frs1; frs2 } -> FltD { rd = f rd; frs1 = f frs1; frs2 = f frs2 }
+    | FleD { rd; frs1; frs2 } -> FleD { rd = f rd; frs1 = f frs1; frs2 = f frs2 }
+    | FcvtDW { frd; rs } -> FcvtDW { frd = f frd; rs = f rs }
+    | FcvtDL { frd; rs } -> FcvtDL { frd = f frd; rs = f rs }
+    | FcvtLD { rd; frs } -> FcvtLD { rd = f rd; frs = f frs }
+    | FcvtWDRtz { rd; frs } -> FcvtWDRtz { rd = f rd; frs = f frs }
+    | FsqrtD { frd; frs } -> FsqrtD { frd = f frd; frs = f frs }
+    | FabsD { frd; frs } -> FabsD { frd = f frd; frs = f frs }
+    | FnegD { frd; frs } -> FnegD { frd = f frd; frs = f frs }
+    | FmvD { frd; frs } -> FmvD { frd = f frd; frs = f frs }
+    | FmvDX { frd; rs } -> FmvDX { frd = f frd; rs = f rs }
+    | FmvDXZero { frd } -> FmvDXZero { frd = f frd }
+    | Fld { frd; base; offset } -> Fld { frd = f frd; base = f base; offset }
+    | Fsd { frd; base; offset } -> Fsd { frd = f frd; base = f base; offset }
+    | La { rd; label } -> La { rd = f rd; label }
+    | Li { rd; imm } -> Li { rd = f rd; imm }
+    | Mv { rd; rs } -> Mv { rd = f rd; rs = f rs }
+    | Call { rd; fn; args; fargs } -> Call { rd = f rd; fn; args = List.map f args; fargs = List.map f fargs }
+    | CallIndirect { rd; fn; args; fargs } -> CallIndirect { rd = f rd; fn = f fn; args = List.map f args; fargs = List.map f fargs }
+    | Spill { target; origin } -> Spill { target = f target; origin }
+    | Reload { target; origin } -> Reload { target = f target; origin }
+    | FSpill { target; origin } -> FSpill { target = f target; origin }
+    | FReload { target; origin } -> FReload { target = f target; origin }
+    | Alloca { rd; size } -> Alloca { rd = f rd; size }
+  ;;
+  
   let inst_map (inst : t) (rd : Slot.t -> Slot.t list) (rs : Slot.t -> Slot.t list) =
     match inst with
     | Add r_slot | Addw r_slot
@@ -328,8 +418,8 @@ module Inst = struct
     | FsqrtD assign_fslot | FabsD assign_fslot | FnegD assign_fslot | FmvD assign_fslot ->
       rd assign_fslot.frd @ rs assign_fslot.frs
     | Fld mem_fslot | Fsd mem_fslot -> rd mem_fslot.frd @ rs mem_fslot.base
-    | La _assign_label -> []
-    | Li _assign_int64 -> []
+    | La assign_label -> rd assign_label.rd
+    | Li assign_int64 -> rd assign_int64.rd
     | Mv assign_slot | Sextw assign_slot | Zextw assign_slot ->
       rd assign_slot.rd @ rs assign_slot.rs
     | FmvDX assign_direct -> rd assign_direct.frd @ rs assign_direct.rs
@@ -356,13 +446,13 @@ module Inst = struct
 
   let adjust_rec_alloc_I (inst : t) (pre_K : int) : int =
     match inst with
-    | Call _ | CallIndirect _ -> pre_K - List.length Reg.caller_saved_regs
+    (* | Call _ | CallIndirect _ -> pre_K - List.length Reg.caller_saved_regs *)
     | _ -> pre_K
   ;;
 
   let adjust_rec_alloc_F (inst : t) (pre_K : int) : int =
     match inst with
-    | Call _ | CallIndirect _ -> pre_K - List.length FReg.caller_saved_fregs
+    (* | Call _ | CallIndirect _ -> pre_K - List.length FReg.caller_saved_fregs *)
     | _ -> pre_K
   
   let to_string x =
@@ -517,6 +607,36 @@ module Term = struct
     | TailCall of call_data
     | TailCallIndirect of call_indirect
     | Ret of Slot.t (* Unit for no return*)
+  ;;
+
+  let term_map_reg (term : t) (f : Slot.t -> Slot.t) : t =
+    match term with
+    | Beq { rs1; rs2; ifso; ifnot } -> Beq { rs1 = f rs1; rs2 = f rs2; ifso; ifnot }
+    | Bne { rs1; rs2; ifso; ifnot } -> Bne { rs1 = f rs1; rs2 = f rs2; ifso; ifnot }
+    | Blt { rs1; rs2; ifso; ifnot } -> Blt { rs1 = f rs1; rs2 = f rs2; ifso; ifnot }
+    | Bge { rs1; rs2; ifso; ifnot } -> Bge { rs1 = f rs1; rs2 = f rs2; ifso; ifnot }
+    | Bltu { rs1; rs2; ifso; ifnot } -> Bltu { rs1 = f rs1; rs2 = f rs2; ifso; ifnot }
+    | Bgeu { rs1; rs2; ifso; ifnot } -> Bgeu { rs1 = f rs1; rs2 = f rs2; ifso; ifnot }
+    | Jalr { rd; rs1; offset } -> Jalr { rd = f rd; rs1 = f rs1; offset }
+    | TailCall { rd; fn; args; fargs } -> TailCall { rd = f rd; fn; args = List.map f args; fargs = List.map f fargs }
+    | TailCallIndirect { rd; fn; args; fargs } -> TailCallIndirect { rd = f rd; fn = f fn; args = List.map f args; fargs = List.map f fargs }
+    | Ret var -> Ret (f var)
+    | x -> x
+  ;;
+
+  let term_map_label (term : t) (f : VBlockLabel.t -> VBlockLabel.t) : t =
+    match term with
+    | Beq { rs1; rs2; ifso; ifnot } -> Beq { rs1; rs2; ifso = f ifso; ifnot = f ifnot }
+    | Bne { rs1; rs2; ifso; ifnot } -> Bne { rs1; rs2; ifso = f ifso; ifnot = f ifnot }
+    | Blt { rs1; rs2; ifso; ifnot } -> Blt { rs1; rs2; ifso = f ifso; ifnot = f ifnot }
+    | Bge { rs1; rs2; ifso; ifnot } -> Bge { rs1; rs2; ifso = f ifso; ifnot = f ifnot }
+    | Bltu { rs1; rs2; ifso; ifnot } -> Bltu { rs1; rs2; ifso = f ifso; ifnot = f ifnot }
+    | Bgeu { rs1; rs2; ifso; ifnot } -> Bgeu { rs1; rs2; ifso = f ifso; ifnot = f ifnot }
+    | J label -> J (f label)
+    | Jal label -> Jal (f label)
+    | x -> x
+  ;;
+
 
   let get_srcs (term : t) : Slot.t list =
     match term with
@@ -645,6 +765,10 @@ module VProg = struct
     match VBlockMap.find_opt vprog.blocks bl with
     | None -> failwith "get_block: block not found"
     | Some x -> x
+  ;;
+
+  let update_block (vprog : t) (bl : VBlockLabel.t) (b : VBlock.t) : t =
+    { vprog with blocks = VBlockMap.add vprog.blocks bl b }
   ;;
 
   let get_func (vprog : t) (fn : VFuncLabel.t) : VFunc.t =
