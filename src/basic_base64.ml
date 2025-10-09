@@ -43,12 +43,12 @@ let encode s =
   let get = Bytes.get_uint8 arr in
   let add c =
     Bytes.unsafe_blit alphabet c ret !pos 1;
-    (incr [@inlined always]) pos
+    incr pos
       [@@inline always]
   in
   let padding () =
     Bytes.unsafe_fill ret !pos 1 pad;
-    (incr [@inlined always]) pos
+    incr pos
       [@@inline always]
   in
   while !l > 2 do
@@ -96,7 +96,7 @@ let decode s =
     let get i = inv s.![i] [@@inline always] in
     let add c =
       Bytes.unsafe_set ret !iter (Char.unsafe_chr c);
-      (incr [@inlined always]) iter
+      incr iter
         [@@inline always]
     in
     while !pos < len - 4 do

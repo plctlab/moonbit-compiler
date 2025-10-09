@@ -247,7 +247,7 @@ let rec sizeof ty =
   | Mtype.T_uint64 -> 8
   | Mtype.T_unit -> 0 (* Unit type has no size *)
   | Mtype.T_tuple _ -> pointer_size
-  | Mtype.T_constr id -> pointer_size
+  | Mtype.T_constr _ -> pointer_size
   | Mtype.T_fixedarray _ -> pointer_size
   | Mtype.T_trait _ -> pointer_size
 
@@ -345,8 +345,6 @@ let to_string t =
   let die x =
     failwith (Printf.sprintf "riscv_ssa.ml: invalid byte count (%d) in load/store" x)
   in
-
-  (** Deal with indentation inside functions. *)
   let rec str t depth =
     String.make (depth * 2) ' ' ^
     match t with

@@ -152,7 +152,7 @@ let iter_fn2 f ssa =
 let map_fn f ssa =
   let map_aux (toplevel: instruction) = 
     match toplevel with
-    | FnDecl { fn; body; args; } -> Riscv_ssa.FnDecl { fn; body = f fn; args }
+    | FnDecl { fn; body = _body; args; } -> Riscv_ssa.FnDecl { fn; body = f fn; args }
     | x -> x
   in
   List.map map_aux ssa
@@ -240,7 +240,7 @@ let liveness_analysis fn =
     let last_item = Vec.pop_opt worklist in
     match last_item with
     | None -> ()
-    | Some fn ->
+    | Some _fn ->
         List.iter (fun name ->
           let block = block_of name in
           let old_live_in = Hashtbl.find live_in name in

@@ -27,7 +27,6 @@
 - OCaml 4.14.2
 - [OPAM](https://opam.ocaml.org/)
 
-MoonBit 必须升级/降级到[特定版本](https://github.com/moonbitlang/core/commit/4660d8b3da6ed79e47462d66d40feff177060699)，因为语言的语法已经改变。
 
 ### 构建
 

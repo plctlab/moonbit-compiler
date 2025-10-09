@@ -329,7 +329,7 @@ let rename fn =
 
     List.iter dfs (Hashtbl.find domtree name);
 
-    Vec.iter (fun inst -> reg_iter (fun rd -> pop_def rd.name) (fun x -> x) inst) old_body;
+    Vec.iter (fun inst -> reg_iter (fun rd -> pop_def rd.name) (fun _rs -> ()) inst) old_body;
     ) in
   dfs fn
 

@@ -3174,7 +3174,7 @@ module Map = struct
                loc_ = _visitors_r3;
              }
 
-        method visit_To_result : _ -> handle_kind = fun env -> To_result
+        method visit_To_result : _ -> handle_kind = fun _env -> To_result
 
         method visit_Joinapply : _ -> var -> handle_kind =
           fun env ->
@@ -3646,7 +3646,7 @@ module Map = struct
                  let _visitors_r4 = self#visit_location env _visitors_floc_ in
                  (fun cond ->
                    fun ifso ->
-                    fun ifnot -> fun ty -> fun loc -> if_ ~loc cond ~ifso ?ifnot)
+                    fun ifnot -> fun _ty -> fun loc -> if_ ~loc cond ~ifso ?ifnot)
                    _visitors_r0 _visitors_r1 _visitors_r2 _visitors_r3
                    _visitors_r4
 
@@ -3695,7 +3695,7 @@ module Map = struct
                  (fun obj ->
                    fun cases ->
                     fun default ->
-                     fun ty -> fun loc -> switch_constr ~loc obj cases ~default)
+                     fun _ty -> fun loc -> switch_constr ~loc obj cases ~default)
                    _visitors_r0 _visitors_r1 _visitors_r2 _visitors_r3
                    _visitors_r4
 
@@ -3731,7 +3731,7 @@ module Map = struct
                  (fun obj ->
                    fun cases ->
                     fun default ->
-                     fun ty ->
+                     fun _ty ->
                       fun loc -> switch_constant ~loc obj cases ~default)
                    _visitors_r0 _visitors_r1 _visitors_r2 _visitors_r3
                    _visitors_r4
@@ -4183,7 +4183,7 @@ module Map = struct
              let _visitors_r0 = self#visit_typ env _visitors_ffunc_ty in
              Normal { func_ty = _visitors_r0 }
 
-        method visit_Join : _ -> apply_kind = fun env -> Join
+        method visit_Join : _ -> apply_kind = fun _env -> Join
 
         method visit_apply_kind : _ -> apply_kind -> apply_kind =
           fun env ->
