@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "core-repo": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1738915706,
+        "narHash": "sha256-8iXJp88sd1ZieQeJKts4dth+It3/Vfvjj7jYo0jK5nE=",
+        "owner": "moonbitlang",
+        "repo": "core",
+        "rev": "f69968c1802a315d3f7baa30238c9c67fe5ccd61",
+        "type": "github"
+      },
+      "original": {
+        "owner": "moonbitlang",
+        "repo": "core",
+        "rev": "f69968c1802a315d3f7baa30238c9c67fe5ccd61",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -15,6 +32,23 @@
       "original": {
         "owner": "numtide",
         "repo": "flake-utils",
+        "type": "github"
+      }
+    },
+    "moon-repo": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1737863743,
+        "narHash": "sha256-wFc2FH7dG6M33cumzYjvi/ZTva8VO5iwCSnjDamZyxU=",
+        "owner": "moonbitlang",
+        "repo": "moon",
+        "rev": "f1ae8e97e4c020c078f0f728987a1001ab8cc5ef",
+        "type": "github"
+      },
+      "original": {
+        "owner": "moonbitlang",
+        "repo": "moon",
+        "rev": "f1ae8e97e4c020c078f0f728987a1001ab8cc5ef",
         "type": "github"
       }
     },
@@ -36,7 +70,9 @@
     },
     "root": {
       "inputs": {
+        "core-repo": "core-repo",
         "flake-utils": "flake-utils",
+        "moon-repo": "moon-repo",
         "nixpkgs": "nixpkgs"
       }
     },

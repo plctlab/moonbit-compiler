@@ -27,6 +27,15 @@ Building a programming language is a long journey. It took Rust 9 years and Go 5
 - OCaml 4.14.2
 - [OPAM](https://opam.ocaml.org/)
 
+### Toolchain versions
+
+This repository currently targets the following upstream snapshots:
+
+- [`moon`](https://github.com/moonbitlang/moon) @ `f1ae8e97e4c020c078f0f728987a1001ab8cc5ef` (2025‑01‑26)
+- [`core`](https://github.com/moonbitlang/core) @ `f69968c1802a315d3f7baa30238c9c67fe5ccd61` (2025‑02‑07)
+
+The pinned commits are encoded in `flake.nix` / `flake.lock`. If you update either project, make sure the compiler still type‑checks `core` with `nix build .#test-core`.
+
 ### Build
 
 Build with following scripts:
@@ -38,6 +47,29 @@ dune build -p moonbit-lang
 ```
 
 You would also need to build the core library, as instructed in the following section.
+
+### Build with Nix
+
+If you prefer a reproducible environment, install [Nix](https://nixos.org/download.html) and use the provided flake:
+
+```bash
+# Drop into a shell with dune/ocaml/etc.
+nix develop
+
+# Build the compiler binary
+nix build
+
+# Build the pinned core library with the current moon/moonc pair
+nix build .#test-core
+```
+
+The last command produces a result symlink that contains:
+
+- `bin/` — the toolchain binaries (`moon`, `moonc`)
+- `logs/build-log.txt` — the core build transcript (if generated)
+- `core/target/` — the compiled core artifacts
+
+These builds use the exact moon/core commits listed above; no extra manual setup is required.
 
 ### Usage
 
@@ -52,15 +84,18 @@ We use `$dest` to represent target files, which might be `.wat` or `.wasm`, but 
 To set up the environment, execute these commands (you only need to do it once):
 
 ```bash
-# Remove currently installed MoonBit version
+# Remove any previously installed MoonBit core
 rm -rf $core
 
-# Install the latest version of core library
+# Fetch the pinned core revision
 git clone https://github.com/moonbitlang/core.git $core
+(cd $core && git checkout f69968c1802a315d3f7baa30238c9c67fe5ccd61)
 
 # Compile the core library
 moon bundle --source-dir $core
 ```
+
+Ensure the `moon` binary you use to run these commands matches commit `f1ae8e97e4c020c078f0f728987a1001ab8cc5ef` (see the “Toolchain versions” section above). The recommended way is to use the `nix build` output from this repository.
 
 We strongly recommend that you build the core library yourself via the commands above. The pre-built binaries are not always compatible with this compiler, as MoonBit is still under development.
 
@@ -150,4 +185,3 @@ In the past two years, our team worked hard to improve MoonBit and its toolchain
 We are grateful for the support of the community. 
 Special thanks to Jane Street for their excellent PPX libraries,
 for this repo has used some of their [PPX functions](./src/hash.c).
-
