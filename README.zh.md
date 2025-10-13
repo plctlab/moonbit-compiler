@@ -28,6 +28,15 @@
 - [OPAM](https://opam.ocaml.org/)
 
 
+### 工具链版本
+
+本仓库当前固定依赖以下上游提交：
+
+- [`moon`](https://github.com/moonbitlang/moon)：`f1ae8e97e4c020c078f0f728987a1001ab8cc5ef`（2025‑01‑26）
+- [`core`](https://github.com/moonbitlang/core)：`f69968c1802a315d3f7baa30238c9c67fe5ccd61`（2025‑02‑07）
+
+这些提交被写入 `flake.nix` / `flake.lock`。如需更新，请确保运行 `nix build .#test-core` 验证当前 `moonc` 与新的 core 是否仍兼容。
+
 ### 构建
 
 使用下列脚本构建:
@@ -38,7 +47,30 @@ opam install -y dune
 dune build -p moonbit-lang
 ```
 
-### 使用
+### 使用 Nix 构建
+
+如果希望拥有可复现的环境，可以安装 [Nix](https://nixos.org/download.html)，并使用项目自带的 flake：
+
+```bash
+# 进入包含所有构建依赖的开发环境（dune、ocaml 等）
+nix develop
+
+# 构建 moonc 与配套的 moon 二进制
+nix build
+
+# 使用固定的 moon/core 组合构建标准库
+nix build .#test-core
+```
+
+最后一条命令会生成一个 `result` 符号链接，内容包括：
+
+- `bin/`：`moon`、`moonc` 以及内部工具；
+- `logs/build-log.txt`：如果存在，保存 core 的构建日志；
+- `core/target/`：编译好的 core 产物。
+
+以上命令全部采用上述固定的 moon/core 提交，无需手动准备其他依赖。
+
+### 手动使用
 
 MoonBit 的核心库一般安装在 `~/.moon/lib/core` 下。在下面的命令中，我们会用 `$core` 表示核心库的安装路径。你可以选择 `riscv` 或 `wasm-gc` 作为编译目标，我们用 `$target` 表示这两者之一。值得注意的是，目前 `riscv` 只会产生 SSA 文件，而不会产生汇编代码。
 
@@ -56,13 +88,13 @@ rm -rf $core
 
 # 安装指定的版本
 git clone https://github.com/moonbitlang/core.git $core
-git checkout 4660d8b
+(cd $core && git checkout f69968c1802a315d3f7baa30238c9c67fe5ccd61)
 
 # 编译
 moon bundle --source-dir $core
 ```
 
-我们强烈建议使用上面的命令重新编译一次标准库。已经构建好的二进制文件可能和这个编译器不兼容。
+请确保运行上述命令时使用的 `moon` 二进制对应 `f1ae8e97e4c020c078f0f728987a1001ab8cc5ef`，推荐直接使用本仓库 `nix build` 的产物。我们强烈建议使用上面的命令重新编译一次标准库。已经构建好的二进制文件可能和这个编译器不兼容。
 
 执行完成后，你应当能在 `$core/target/` 下发现文件夹 `wasm-gc`。
 
@@ -147,4 +179,3 @@ MoonBit 采用 MoonBit Public License，一个放宽的 SSPL (Server Side Public
 
 我们十分感谢社区对我们的支持。  
 特别感谢 Jane Street 的优秀的 PPX 库，这个仓库使用了一些他们的 [PPX 函数](./src/hash.c)。
-
