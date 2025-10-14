@@ -34,8 +34,6 @@ This repository currently targets the following upstream snapshots:
 - [`moon`](https://github.com/moonbitlang/moon) @ `f1ae8e97e4c020c078f0f728987a1001ab8cc5ef` (2025‑01‑26)
 - [`core`](https://github.com/moonbitlang/core) @ `f69968c1802a315d3f7baa30238c9c67fe5ccd61` (2025‑02‑07)
 
-The pinned commits are encoded in `flake.nix` / `flake.lock`. If you update either project, make sure the compiler still type‑checks `core` with `nix build .#test-core`.
-
 ### Build
 
 Build with following scripts:
@@ -47,29 +45,6 @@ dune build -p moonbit-lang
 ```
 
 You would also need to build the core library, as instructed in the following section.
-
-### Build with Nix
-
-If you prefer a reproducible environment, install [Nix](https://nixos.org/download.html) and use the provided flake:
-
-```bash
-# Drop into a shell with dune/ocaml/etc.
-nix develop
-
-# Build the compiler binary
-nix build
-
-# Build the pinned core library with the current moon/moonc pair
-nix build .#test-core
-```
-
-The last command produces a result symlink that contains:
-
-- `bin/` — the toolchain binaries (`moon`, `moonc`)
-- `logs/build-log.txt` — the core build transcript (if generated)
-- `core/target/` — the compiled core artifacts
-
-These builds use the exact moon/core commits listed above; no extra manual setup is required.
 
 ### Usage
 
@@ -95,9 +70,7 @@ git clone https://github.com/moonbitlang/core.git $core
 moon bundle --source-dir $core
 ```
 
-Ensure the `moon` binary you use to run these commands matches commit `f1ae8e97e4c020c078f0f728987a1001ab8cc5ef` (see the “Toolchain versions” section above). The recommended way is to use the `nix build` output from this repository.
-
-We strongly recommend that you build the core library yourself via the commands above. The pre-built binaries are not always compatible with this compiler, as MoonBit is still under development.
+Ensure the `moon` binary you use to run these commands matches commit `f1ae8e97e4c020c078f0f728987a1001ab8cc5ef` (see the “Toolchain versions” section above). 
 
 You should verify that now there is a folder called `wasm-gc` under `$core/target`.
 
@@ -119,6 +92,45 @@ moonc link-core $bundled/core.core $obj -o $dest -pkg-config-path $src/moon.pkg.
 Then `$dest` would be available for use.
 
 In case you are still in doubt, refer to the output of `moon run --dry-run`.
+## Develop using Nix
+We provide a Nix flake configuration for easier development environment setup. The flake automatically handles all dependencies and version pinning.
+
+If you have installed nix with flakes, simply enter the development shell:
+
+```bash
+nix develop
+```
+
+This command will:
+- Build the custom `moon` binary from the pinned commit (f1ae8e97)
+- Build the `moonc` compiler from the current repository
+- Build the core library from the pinned revision (f69968c1)
+- Install all required OCaml dependencies
+- Automatically link the built core library to `~/.moon/lib/core`
+- Backup your existing core library to `~/.moon/lib/core.backup` if present
+
+The environment includes:
+- OCaml 5.3.0 with Dune 3.20.2
+- Custom-built `moon` and `moonc` binaries matching the pinned versions
+- Pre-built core library ready for use
+- All development tools (clang, python3, etc.)
+
+### Restoring Original Core Library
+
+When you exit the Nix development shell, the core library symlink remains. To restore your original core library:
+
+```bash
+rm ~/.moon/lib/core
+[ -e ~/.moon/lib/core.backup ] && mv ~/.moon/lib/core.backup ~/.moon/lib/core
+```
+
+## Testing
+
+The repository includes a test suite for the RISC-V backend located in `test/`. You can run the tests by:
+
+```bash
+python3 test.py
+```
 
 ## Use Wasm-based MoonBit Compiler
 
