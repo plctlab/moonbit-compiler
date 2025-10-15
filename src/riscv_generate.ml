@@ -193,7 +193,8 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
         let ty =
           (match arr.ty with
           | Mtype.T_fixedarray { elem } -> elem
-          | _ -> failwith "riscv_ssa.ml: bad type in fixedarray_get_item")
+          | Mtype.T_bytes -> Mtype.T_byte  (* Bytes is treated as FixedArray[Byte] *)
+          | _ -> failwith (Printf.sprintf "riscv_ssa.ml: bad type in fixedarray_get_item: %s" (Mtype.to_string arr.ty)))
         in
         let size = sizeof ty in
         let addr = new_temp Mtype.T_bytes in
@@ -321,7 +322,41 @@ let deal_with_prim tac rd (prim: Primitive.prim) args =
 
           Vec.push tac (Label exit);
 
-      | _ -> failwith "riscv_ssa.ml: unrecognized config of fixed array make")
+      | EverySingleElem ->
+          (* Similar to Parray_make, but for FixedArray *)
+          (* The args are the individual elements to put in the array *)
+          let length = List.length args in
+          if length = 0 then
+            (* Empty array *)
+            let sz = new_temp Mtype.T_int in
+            Vec.push tac (AssignInt { rd = sz; imm = 0 });
+            Vec.push tac (Addi { rd; rs = sz; imm = 4 });
+            let space = new_temp Mtype.T_bytes in
+            Vec.push tac (Malloc { rd = space; size = 4 });
+            Vec.push tac (Store { rd = sz; rs = space; offset = 0; byte = 4 });
+            Vec.push tac (Addi { rd; rs = space; imm = 4 })
+          else (
+            let elem_size = sizeof (List.hd args).ty in
+            let buf_size = length * elem_size in
+
+            let len = new_temp Mtype.T_int in
+            let space = new_temp Mtype.T_bytes in
+
+            (* Allocate buffer with length prefix *)
+            Vec.push tac (Malloc { rd = space; size = buf_size + 4 });
+
+            (* Store length *)
+            Vec.push tac (AssignInt { rd = len; imm = length });
+            Vec.push tac (Store { rd = len; rs = space; offset = 0; byte = 4 });
+
+            (* Point rd to the data part (after length) *)
+            Vec.push tac (Addi { rd; rs = space; imm = 4 });
+
+            (* Store all elements *)
+            List.iteri (fun i x ->
+              Vec.push tac (Store { rd = x; rs = rd; offset = i * elem_size; byte = elem_size })
+            ) args
+          ))
   
   (* The list of arguments are the contents of the array. *)
   (* This primitive constructs a `@builtin.Array` record; *)
@@ -638,7 +673,7 @@ This function stores the SSA generated in the given argument `tac`.
 It returns the variable in which the result of the last instruction pushed is stored.
 *)
 let rec do_convert tac (expr: Mcore.expr) =
-  match expr with
+  (match expr with
   | Cexpr_unit _ ->
       unit
   
@@ -1494,6 +1529,56 @@ let rec do_convert tac (expr: Mcore.expr) =
   | Cexpr_function _ ->
       Printf.printf "unconverted: Cexpr_function\n";
       failwith "riscv_generate.ml: Cexpr_function should have been converted into letfn"
+
+  | Cexpr_and { lhs; rhs; _ } ->
+      (* Short-circuit AND: if lhs then rhs else false *)
+      let rd = new_temp Mtype.T_bool in
+      let lhs_result = do_convert tac lhs in
+
+      let true_label = new_label "and_true_" in
+      let false_label = new_label "and_false_" in
+      let exit_label = new_label "and_exit_" in
+
+      Vec.push tac (Branch { cond = lhs_result; ifso = true_label; ifnot = false_label });
+
+      Vec.push tac (Label true_label);
+      let rhs_result = do_convert tac rhs in
+      Vec.push tac (Assign { rd; rs = rhs_result });
+      Vec.push tac (Jump exit_label);
+
+      Vec.push tac (Label false_label);
+      let false_val = new_temp Mtype.T_bool in
+      Vec.push tac (AssignInt { rd = false_val; imm = 0 });
+      Vec.push tac (Assign { rd; rs = false_val });
+      Vec.push tac (Jump exit_label);
+
+      Vec.push tac (Label exit_label);
+      rd
+
+  | Cexpr_or { lhs; rhs; _ } ->
+      (* Short-circuit OR: if lhs then true else rhs *)
+      let rd = new_temp Mtype.T_bool in
+      let lhs_result = do_convert tac lhs in
+
+      let true_label = new_label "or_true_" in
+      let false_label = new_label "or_false_" in
+      let exit_label = new_label "or_exit_" in
+
+      Vec.push tac (Branch { cond = lhs_result; ifso = true_label; ifnot = false_label });
+
+      Vec.push tac (Label true_label);
+      let true_val = new_temp Mtype.T_bool in
+      Vec.push tac (AssignInt { rd = true_val; imm = 1 });
+      Vec.push tac (Assign { rd; rs = true_val });
+      Vec.push tac (Jump exit_label);
+
+      Vec.push tac (Label false_label);
+      let rhs_result = do_convert tac rhs in
+      Vec.push tac (Assign { rd; rs = rhs_result });
+      Vec.push tac (Jump exit_label);
+
+      Vec.push tac (Label exit_label);
+      rd)
 
 let generate_vtables () =
   Hashtbl.iter (fun (ty: Mtype.t) methods ->

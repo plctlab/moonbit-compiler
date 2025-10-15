@@ -35,7 +35,6 @@
 - [`moon`](https://github.com/moonbitlang/moon)：`f1ae8e97e4c020c078f0f728987a1001ab8cc5ef`（2025‑01‑26）
 - [`core`](https://github.com/moonbitlang/core)：`f69968c1802a315d3f7baa30238c9c67fe5ccd61`（2025‑02‑07）
 
-这些提交被写入 `flake.nix` / `flake.lock`。如需更新，请确保运行 `nix build .#test-core` 验证当前 `moonc` 与新的 core 是否仍兼容。
 
 ### 构建
 
@@ -47,30 +46,9 @@ opam install -y dune
 dune build -p moonbit-lang
 ```
 
-### 使用 Nix 构建
+你还需要构建核心库，请参考以下章节的说明。
 
-如果希望拥有可复现的环境，可以安装 [Nix](https://nixos.org/download.html)，并使用项目自带的 flake：
-
-```bash
-# 进入包含所有构建依赖的开发环境（dune、ocaml 等）
-nix develop
-
-# 构建 moonc 与配套的 moon 二进制
-nix build
-
-# 使用固定的 moon/core 组合构建标准库
-nix build .#test-core
-```
-
-最后一条命令会生成一个 `result` 符号链接，内容包括：
-
-- `bin/`：`moon`、`moonc` 以及内部工具；
-- `logs/build-log.txt`：如果存在，保存 core 的构建日志；
-- `core/target/`：编译好的 core 产物。
-
-以上命令全部采用上述固定的 moon/core 提交，无需手动准备其他依赖。
-
-### 手动使用
+### 使用
 
 MoonBit 的核心库一般安装在 `~/.moon/lib/core` 下。在下面的命令中，我们会用 `$core` 表示核心库的安装路径。你可以选择 `riscv` 或 `wasm-gc` 作为编译目标，我们用 `$target` 表示这两者之一。值得注意的是，目前 `riscv` 只会产生 SSA 文件，而不会产生汇编代码。
 
@@ -94,7 +72,7 @@ git clone https://github.com/moonbitlang/core.git $core
 moon bundle --source-dir $core
 ```
 
-请确保运行上述命令时使用的 `moon` 二进制对应 `f1ae8e97e4c020c078f0f728987a1001ab8cc5ef`，推荐直接使用本仓库 `nix build` 的产物。我们强烈建议使用上面的命令重新编译一次标准库。已经构建好的二进制文件可能和这个编译器不兼容。
+请确保运行上述命令时使用的 `moon` 二进制对应 `f1ae8e97e4c020c078f0f728987a1001ab8cc5ef`（参见上面的"工具链版本"部分）。
 
 执行完成后，你应当能在 `$core/target/` 下发现文件夹 `wasm-gc`。
 
@@ -115,6 +93,47 @@ moonc link-core $bundled/core.core $obj -o $dest -pkg-config-path $src/moon.pkg.
 执行后，`$dest` 就是编译好的目标代码了。
 
 如果你仍有疑问，可以参考 `moon run --dry-run` 的输出。
+
+## 使用 Nix 开发
+
+我们提供了 Nix flake 配置，以便更轻松地搭建开发环境。flake 自动处理所有依赖项和版本固定。
+
+如果你已经安装了带有 flakes 支持的 Nix，只需进入开发环境：
+
+```bash
+nix develop
+```
+
+该命令会：
+- 从固定的提交（f1ae8e97）构建自定义的 `moon` 二进制文件
+- 从当前仓库构建 `moonc` 编译器
+- 从固定的版本（f69968c1）构建核心库
+- 安装所有必需的 OCaml 依赖
+- 自动将构建好的核心库链接到 `~/.moon/lib/core`
+- 如果存在现有的核心库，会备份到 `~/.moon/lib/core.backup`
+
+环境包括：
+- OCaml 5.3.0 和 Dune 3.20.2
+- 与固定版本匹配的自定义构建的 `moon` 和 `moonc` 二进制文件
+- 预构建的核心库，可直接使用
+- 所有开发工具（clang、python3 等）
+
+### 恢复原始核心库
+
+当你退出 Nix 开发环境时，核心库的符号链接会保留。要恢复原始的核心库：
+
+```bash
+rm ~/.moon/lib/core
+[ -e ~/.moon/lib/core.backup ] && mv ~/.moon/lib/core.backup ~/.moon/lib/core
+```
+
+## 测试
+
+该仓库包含位于 `test/` 目录的 RISC-V 后端测试套件。你可以通过以下命令运行测试：
+
+```bash
+python3 test.py
+```
 
 ## 使用wasm版的MoonBit编译器
 
