@@ -1303,12 +1303,20 @@ let rec do_convert tac (expr: Mcore.expr) =
         let rd = new_temp ty in 
 
         let values =
-          List.map (fun (t, _) -> 
+          List.map (fun (t, _) ->
             match t with
             | Constant.C_bool b -> Bool.to_int b
             | Constant.C_int { v } -> Int32.to_int v
             | Constant.C_char v -> Uchar.to_int v
-            | _ -> failwith "TODO: unsupported switch constant type"
+            | Constant.C_byte { v; _ } -> v
+            | Constant.C_int64 { v; _ } -> Int64.to_int v
+            | Constant.C_uint { v; _ } -> Int32.to_int (Basic_uint32.to_int32 v)
+            | Constant.C_uint64 { v; _ } -> Int64.to_int (Basic_uint64.to_int64 v)
+            | Constant.C_string _ -> failwith "TODO: switch on string constants is not supported"
+            | Constant.C_bytes _ -> failwith "TODO: switch on bytes constants is not supported"
+            | Constant.C_float _ -> failwith "TODO: switch on float constants is not supported"
+            | Constant.C_double _ -> failwith "TODO: switch on double constants is not supported"
+            | Constant.C_bigint _ -> failwith "TODO: switch on bigint constants is not supported"
           ) cases
         in
         

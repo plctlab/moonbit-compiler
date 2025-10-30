@@ -374,15 +374,23 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
   | Jump label ->
       terminator := Term.J (label_of label)
 
-  | JumpIndirect { rs; possibilities } -> (* TODO: Optimizations on possibilities *)
-      if List.length possibilities = 1 then
-        terminator := Term.J (label_of (List.hd possibilities))
-      else
-        terminator := Term.Jalr {
-          rd = Slot.Reg Zero;
-          rs1 = slot_v rs;
-          offset = 0;
-        };
+  | JumpIndirect { rs; possibilities } ->
+      (* Optimize based on the number of possible jump targets *)
+      (match List.length possibilities with
+      | 0 ->
+          (* No possible targets - this shouldn't happen in valid code *)
+          failwith "JumpIndirect with no possibilities"
+      | 1 ->
+          (* Single target: convert to direct jump *)
+          terminator := Term.J (label_of (List.hd possibilities))
+      | _ ->
+          (* Multiple targets: use indirect jump *)
+          (* TODO: For 2-3 targets, could generate conditional branches instead *)
+          terminator := Term.Jalr {
+            rd = Slot.Reg Zero;
+            rs1 = slot_v rs;
+            offset = 0;
+          });
 
   (* Floating point instructions *)
   | FAdd _ -> ()
