@@ -168,9 +168,16 @@ let remove_dead_variable fn =
       let preserve = ref true in
       reg_iterd (fun x -> preserve := Stringset.mem x.name preserved) x;
 
-      (* TODO: refine this, so that calls to pure functions are also eliminated *)
+      (* Pure function calls can be eliminated if their results are unused.
+         Non-pure functions must always be preserved due to side effects. *)
       match x with
-      | Call { fn } when not (is_pure fn) -> true
+      | Call { fn } ->
+          if is_pure fn then
+            (* Pure function: eliminate if result is not used *)
+            !preserve
+          else
+            (* Non-pure function: always keep (has side effects) *)
+            true
       | CallExtern _ | CallIndirect _ -> true
       | _ -> !preserve
     ) body;

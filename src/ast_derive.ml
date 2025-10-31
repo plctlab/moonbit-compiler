@@ -1991,10 +1991,22 @@ module DeriveJson = struct
               match (default_expr_positional, default_expr_named) with
               | Some expr, None -> Some expr
               | None, Some expr -> Some expr
-              | Some _, Some _ ->
-                  failwith
-                    "TODO: default_expr_positional and default_expr_named \
-                     should not both be set"
+              | Some expr_pos, Some expr_named ->
+                  (* When both positional and named layouts specify default expressions,
+                     check if they are the same. If they differ, this is a semantic error
+                     indicating conflicting default values for the same parameter. *)
+                  if Stdlib.( = ) expr_pos expr_named then
+                    (* Both specify the same default - use it *)
+                    Some expr_pos
+                  else
+                    (* Conflicting defaults - this should not happen in well-formed code *)
+                    failwith
+                      (Printf.sprintf
+                         "Conflicting default expressions for parameter %s: \
+                          positional and named layouts specify different defaults"
+                         (match name with
+                         | None -> "at index " ^ Int.to_string i
+                         | Some n -> n))
               | None, None -> None
             in
             let default_value =

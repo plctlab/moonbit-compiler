@@ -286,93 +286,159 @@ module Inst = struct
     (* Stack Allocation Directive *)
     | Alloca of alloca
 
-  (* TODO : Refactor *)
-  let inst_convert (inst : t) (f : Slot.t -> Slot.t) : t = 
+  (* Helper functions to reduce code duplication in inst_convert.
+     These functions apply a transformation function f to register slots
+     in different instruction record types. *)
+  let conv_r_slot f ({ rd; rs1; rs2 } : Slots.r_slot) : Slots.r_slot =
+    { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
+
+  let conv_i_slot f ({ rd; rs1; imm } : Slots.i_slot) : Slots.i_slot =
+    { rd = f rd; rs1 = f rs1; imm }
+
+  let conv_mem_slot f ({ rd; base; offset } : Slots.mem_slot) : Slots.mem_slot =
+    { rd = f rd; base = f base; offset }
+
+  let conv_mem_fslot f ({ frd; base; offset } : Slots.mem_fslot) : Slots.mem_fslot =
+    { frd = f frd; base = f base; offset }
+
+  let conv_r_fslot f ({ frd; frs1; frs2 } : Slots.r_fslot) : Slots.r_fslot =
+    { frd = f frd; frs1 = f frs1; frs2 = f frs2 }
+
+  let conv_triple_fslot f ({ frd; frs1; frs2; frs3 } : Slots.triple_fslot) : Slots.triple_fslot =
+    { frd = f frd; frs1 = f frs1; frs2 = f frs2; frs3 = f frs3 }
+
+  let conv_assign_slot f ({ rd; rs } : Slots.assign_slot) : Slots.assign_slot =
+    { rd = f rd; rs = f rs }
+
+  let conv_assign_fslot f ({ frd; frs } : Slots.assign_fslot) : Slots.assign_fslot =
+    { frd = f frd; frs = f frs }
+
+  let conv_convert_fslot f ({ frd; rs } : Slots.convert_fslot) : Slots.convert_fslot =
+    { frd = f frd; rs = f rs }
+
+  let conv_convert_slot f ({ rd; frs } : Slots.convert_slot) : Slots.convert_slot =
+    { rd = f rd; frs = f frs }
+
+  let conv_compare_fslot f ({ rd; frs1; frs2 } : Slots.compare_fslot) : Slots.compare_fslot =
+    { rd = f rd; frs1 = f frs1; frs2 = f frs2 }
+
+  let inst_convert (inst : t) (f : Slot.t -> Slot.t) : t =
     match inst with
-    | Add { rd; rs1; rs2 } -> Add { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Addw { rd; rs1; rs2 } -> Addw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Sub { rd; rs1; rs2 } -> Sub { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Subw { rd; rs1; rs2 } -> Subw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Mul { rd; rs1; rs2 } -> Mul { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Mulw { rd; rs1; rs2 } -> Mulw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Div { rd; rs1; rs2 } -> Div { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Divw { rd; rs1; rs2 } -> Divw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Divu { rd; rs1; rs2 } -> Divu { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Divuw { rd; rs1; rs2 } -> Divuw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Rem { rd; rs1; rs2 } -> Rem { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Remw { rd; rs1; rs2 } -> Remw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Remu { rd; rs1; rs2 } -> Remu { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Remuw { rd; rs1; rs2 } -> Remuw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Sextw { rd; rs } -> Sextw { rd = f rd; rs = f rs }
-    | Zextw { rd; rs } -> Zextw { rd = f rd; rs = f rs }
-    | Addi { rd; rs1; imm } -> Addi { rd = f rd; rs1 = f rs1; imm }
-    | Addiw { rd; rs1; imm } -> Addiw { rd = f rd; rs1 = f rs1; imm }
-    | And { rd; rs1; rs2 } -> And { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Or { rd; rs1; rs2 } -> Or { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Xor { rd; rs1; rs2 } -> Xor { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Andi { rd; rs1; imm } -> Andi { rd = f rd; rs1 = f rs1; imm }
-    | Ori { rd; rs1; imm } -> Ori { rd = f rd; rs1 = f rs1; imm }
-    | Xori { rd; rs1; imm } -> Xori { rd = f rd; rs1 = f rs1; imm }
-    | Slt { rd; rs1; rs2 } -> Slt { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Sltw { rd; rs1; rs2 } -> Sltw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Sltu { rd; rs1; rs2 } -> Sltu { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Sltuw { rd; rs1; rs2 } -> Sltuw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Slti { rd; rs1; imm } -> Slti { rd = f rd; rs1 = f rs1; imm }
-    | Sltiw { rd; rs1; imm } -> Sltiw { rd = f rd; rs1 = f rs1; imm }
-    | Sll { rd; rs1; rs2 } -> Sll { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Sllw { rd; rs1; rs2 } -> Sllw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Srl { rd; rs1; rs2 } -> Srl { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Srlw { rd; rs1; rs2 } -> Srlw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Sra { rd; rs1; rs2 } -> Sra { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Sraw { rd; rs1; rs2 } -> Sraw { rd = f rd; rs1 = f rs1; rs2 = f rs2 }
-    | Slli { rd; rs1; imm } -> Slli { rd = f rd; rs1 = f rs1; imm }
-    | Slliw { rd; rs1; imm } -> Slliw { rd = f rd; rs1 = f rs1; imm }
-    | Srli { rd; rs1; imm } -> Srli { rd = f rd; rs1 = f rs1; imm }
-    | Srliw { rd; rs1; imm } -> Srliw { rd = f rd; rs1 = f rs1; imm }
-    | Srai { rd; rs1; imm } -> Srai { rd = f rd; rs1 = f rs1; imm }
-    | Sraiw { rd; rs1; imm } -> Sraiw { rd = f rd; rs1 = f rs1; imm }
-    | Lb { rd; base; offset } -> Lb { rd = f rd; base = f base; offset }
-    | Lbu { rd; base; offset } -> Lbu { rd = f rd; base = f base; offset }
-    | Lh { rd; base; offset } -> Lh { rd = f rd; base = f base; offset }
-    | Lhu { rd; base; offset } -> Lhu { rd = f rd; base = f base; offset }
-    | Lw { rd; base; offset } -> Lw { rd = f rd; base = f base; offset }
-    | Ld { rd; base; offset } -> Ld { rd = f rd; base = f base; offset }
-    | Sb { rd; base; offset } -> Sb { rd = f rd; base = f base; offset }
-    | Sh { rd; base; offset } -> Sh { rd = f rd; base = f base; offset }
-    | Sw { rd; base; offset } -> Sw { rd = f rd; base = f base; offset }
-    | Sd { rd; base; offset } -> Sd { rd = f rd; base = f base; offset }
-    | FaddD { frd; frs1; frs2 } -> FaddD { frd = f frd; frs1 = f frs1; frs2 = f frs2 }
-    | FsubD { frd; frs1; frs2 } -> FsubD { frd = f frd; frs1 = f frs1; frs2 = f frs2 }
-    | FmulD { frd; frs1; frs2 } -> FmulD { frd = f frd; frs1 = f frs1; frs2 = f frs2 }
-    | FdivD { frd; frs1; frs2 } -> FdivD { frd = f frd; frs1 = f frs1; frs2 = f frs2 }
-    | FmaddD { frd; frs1; frs2; frs3 } -> FmaddD { frd = f frd; frs1 = f frs1; frs2 = f frs2; frs3 = f frs3 }
-    | FmsubD { frd; frs1; frs2; frs3 } -> FmsubD { frd = f frd; frs1 = f frs1; frs2 = f frs2; frs3 = f frs3 }
-    | FnmaddD { frd; frs1; frs2; frs3 } -> FnmaddD { frd = f frd; frs1 = f frs1; frs2 = f frs2; frs3 = f frs3 }
-    | FnmsubD { frd; frs1; frs2; frs3 } -> FnmsubD { frd = f frd; frs1 = f frs1; frs2 = f frs2; frs3 = f frs3 }
-    | FeqD { rd; frs1; frs2 } -> FeqD { rd = f rd; frs1 = f frs1; frs2 = f frs2 }
-    | FltD { rd; frs1; frs2 } -> FltD { rd = f rd; frs1 = f frs1; frs2 = f frs2 }
-    | FleD { rd; frs1; frs2 } -> FleD { rd = f rd; frs1 = f frs1; frs2 = f frs2 }
-    | FcvtDW { frd; rs } -> FcvtDW { frd = f frd; rs = f rs }
-    | FcvtDL { frd; rs } -> FcvtDL { frd = f frd; rs = f rs }
-    | FcvtLD { rd; frs } -> FcvtLD { rd = f rd; frs = f frs }
-    | FcvtWDRtz { rd; frs } -> FcvtWDRtz { rd = f rd; frs = f frs }
-    | FsqrtD { frd; frs } -> FsqrtD { frd = f frd; frs = f frs }
-    | FabsD { frd; frs } -> FabsD { frd = f frd; frs = f frs }
-    | FnegD { frd; frs } -> FnegD { frd = f frd; frs = f frs }
-    | FmvD { frd; frs } -> FmvD { frd = f frd; frs = f frs }
+    (* Integer R-type instructions *)
+    | Add r -> Add (conv_r_slot f r)
+    | Addw r -> Addw (conv_r_slot f r)
+    | Sub r -> Sub (conv_r_slot f r)
+    | Subw r -> Subw (conv_r_slot f r)
+    | Mul r -> Mul (conv_r_slot f r)
+    | Mulw r -> Mulw (conv_r_slot f r)
+    | Div r -> Div (conv_r_slot f r)
+    | Divw r -> Divw (conv_r_slot f r)
+    | Divu r -> Divu (conv_r_slot f r)
+    | Divuw r -> Divuw (conv_r_slot f r)
+    | Rem r -> Rem (conv_r_slot f r)
+    | Remw r -> Remw (conv_r_slot f r)
+    | Remu r -> Remu (conv_r_slot f r)
+    | Remuw r -> Remuw (conv_r_slot f r)
+    | And r -> And (conv_r_slot f r)
+    | Or r -> Or (conv_r_slot f r)
+    | Xor r -> Xor (conv_r_slot f r)
+    | Slt r -> Slt (conv_r_slot f r)
+    | Sltw r -> Sltw (conv_r_slot f r)
+    | Sltu r -> Sltu (conv_r_slot f r)
+    | Sltuw r -> Sltuw (conv_r_slot f r)
+    | Sll r -> Sll (conv_r_slot f r)
+    | Sllw r -> Sllw (conv_r_slot f r)
+    | Srl r -> Srl (conv_r_slot f r)
+    | Srlw r -> Srlw (conv_r_slot f r)
+    | Sra r -> Sra (conv_r_slot f r)
+    | Sraw r -> Sraw (conv_r_slot f r)
+
+    (* Integer I-type instructions *)
+    | Addi i -> Addi (conv_i_slot f i)
+    | Addiw i -> Addiw (conv_i_slot f i)
+    | Andi i -> Andi (conv_i_slot f i)
+    | Ori i -> Ori (conv_i_slot f i)
+    | Xori i -> Xori (conv_i_slot f i)
+    | Slti i -> Slti (conv_i_slot f i)
+    | Sltiw i -> Sltiw (conv_i_slot f i)
+    | Slli i -> Slli (conv_i_slot f i)
+    | Slliw i -> Slliw (conv_i_slot f i)
+    | Srli i -> Srli (conv_i_slot f i)
+    | Srliw i -> Srliw (conv_i_slot f i)
+    | Srai i -> Srai (conv_i_slot f i)
+    | Sraiw i -> Sraiw (conv_i_slot f i)
+
+    (* Memory load/store instructions *)
+    | Lb m -> Lb (conv_mem_slot f m)
+    | Lbu m -> Lbu (conv_mem_slot f m)
+    | Lh m -> Lh (conv_mem_slot f m)
+    | Lhu m -> Lhu (conv_mem_slot f m)
+    | Lw m -> Lw (conv_mem_slot f m)
+    | Ld m -> Ld (conv_mem_slot f m)
+    | Sb m -> Sb (conv_mem_slot f m)
+    | Sh m -> Sh (conv_mem_slot f m)
+    | Sw m -> Sw (conv_mem_slot f m)
+    | Sd m -> Sd (conv_mem_slot f m)
+
+    (* Floating-point R-type instructions *)
+    | FaddD rf -> FaddD (conv_r_fslot f rf)
+    | FsubD rf -> FsubD (conv_r_fslot f rf)
+    | FmulD rf -> FmulD (conv_r_fslot f rf)
+    | FdivD rf -> FdivD (conv_r_fslot f rf)
+
+    (* Floating-point fused multiply-add instructions *)
+    | FmaddD tf -> FmaddD (conv_triple_fslot f tf)
+    | FmsubD tf -> FmsubD (conv_triple_fslot f tf)
+    | FnmaddD tf -> FnmaddD (conv_triple_fslot f tf)
+    | FnmsubD tf -> FnmsubD (conv_triple_fslot f tf)
+
+    (* Floating-point comparison instructions *)
+    | FeqD cmp -> FeqD (conv_compare_fslot f cmp)
+    | FltD cmp -> FltD (conv_compare_fslot f cmp)
+    | FleD cmp -> FleD (conv_compare_fslot f cmp)
+
+    (* Floating-point conversion instructions *)
+    | FcvtDW cf -> FcvtDW (conv_convert_fslot f cf)
+    | FcvtDL cf -> FcvtDL (conv_convert_fslot f cf)
+    | FcvtLD cs -> FcvtLD (conv_convert_slot f cs)
+    | FcvtWDRtz cs -> FcvtWDRtz (conv_convert_slot f cs)
+
+    (* Floating-point unary instructions *)
+    | FsqrtD af -> FsqrtD (conv_assign_fslot f af)
+    | FabsD af -> FabsD (conv_assign_fslot f af)
+    | FnegD af -> FnegD (conv_assign_fslot f af)
+    | FmvD af -> FmvD (conv_assign_fslot f af)
+
+    (* Floating-point memory instructions *)
+    | Fld m -> Fld (conv_mem_fslot f m)
+    | Fsd m -> Fsd (conv_mem_fslot f m)
+
+    (* Integer assignment instructions *)
+    | Sextw a -> Sextw (conv_assign_slot f a)
+    | Zextw a -> Zextw (conv_assign_slot f a)
+    | Mv a -> Mv (conv_assign_slot f a)
+
+    (* Mixed register operations *)
     | FmvDX { frd; rs } -> FmvDX { frd = f frd; rs = f rs }
     | FmvDXZero { frd } -> FmvDXZero { frd = f frd }
-    | Fld { frd; base; offset } -> Fld { frd = f frd; base = f base; offset }
-    | Fsd { frd; base; offset } -> Fsd { frd = f frd; base = f base; offset }
+
+    (* Load address and immediate *)
     | La { rd; label } -> La { rd = f rd; label }
     | Li { rd; imm } -> Li { rd = f rd; imm }
-    | Mv { rd; rs } -> Mv { rd = f rd; rs = f rs }
-    | Call { rd; fn; args; fargs } -> Call { rd = f rd; fn; args = List.map f args; fargs = List.map f fargs }
-    | CallIndirect { rd; fn; args; fargs } -> CallIndirect { rd = f rd; fn = f fn; args = List.map f args; fargs = List.map f fargs }
+
+    (* Call instructions *)
+    | Call { rd; fn; args; fargs } ->
+        Call { rd = f rd; fn; args = List.map f args; fargs = List.map f fargs }
+    | CallIndirect { rd; fn; args; fargs } ->
+        CallIndirect { rd = f rd; fn = f fn; args = List.map f args; fargs = List.map f fargs }
+
+    (* Register allocation directives *)
     | Spill { target; origin } -> Spill { target = f target; origin }
     | Reload { target; origin } -> Reload { target = f target; origin }
     | FSpill { target; origin } -> FSpill { target = f target; origin }
     | FReload { target; origin } -> FReload { target = f target; origin }
+
+    (* Stack allocation *)
     | Alloca { rd; size } -> Alloca { rd = f rd; size }
   ;;
   
