@@ -116,11 +116,26 @@ let find_max_freq (freq_map_opt : int SlotMap.t option) : Slot.t option =
       in
       Some max_reg)
 
+(* Helper function: Choose the least-used register from available registers *)
+let choose_least_used_reg (available : SlotSet.t) (usage_map : int SlotMap.t) : Slot.t =
+  (* Count how many times each available register is already used *)
+  let min_reg, _ =
+    SlotSet.fold available (None, max_int) (fun reg (best_reg, min_count) ->
+      let count = SlotMap.find_default usage_map reg 0 in
+      if count < min_count then
+        (Some reg, count)
+      else
+        (best_reg, min_count)
+    )
+  in
+  match min_reg with
+  | Some r -> r
+  | None -> SlotSet.choose available  (* Fallback to arbitrary choice if empty *)
+
 (* 1. Allocate register for the entry part.
   For each variable, simply use the most frequent register from predecessors.
   Since a block may not be the begining of the loop back edge, for loop back edge predecessors, force them to use the same register.
 *)
-(* TODO: Optimize choosing strategy *)
 let alloc_entry (bl : VBlockLabel.t) =
   let binfo = Spill.get_spillinfo bl in
   let rinfo = get_allocinfo bl in
@@ -152,13 +167,21 @@ let alloc_entry (bl : VBlockLabel.t) =
       | Some reg -> reg_map := SlotMap.add !reg_map var reg;
       | None -> unalloc := SlotSet.add !unalloc var;
     );
-  (* Allocate them *)
+  (* Allocate them using least-used register strategy *)
   let reg_used = SlotMap.fold !reg_map SlotSet.empty (fun _ reg used -> SlotSet.add used reg) in
   let reg_left = SlotSet.diff available_regs reg_used in
+  (* Build usage map: count how many times each register is already assigned *)
+  let usage_count = ref SlotMap.empty in
+  SlotMap.iter !reg_map (fun _ reg ->
+    usage_count := SlotMap.add !usage_count reg (SlotMap.find_default !usage_count reg 0 + 1)
+  );
   let _ = SlotSet.fold !unalloc reg_left
     (fun var reg_left ->
-      let reg = SlotSet.choose reg_left in
+      (* Choose the least-used register from available ones *)
+      let reg = choose_least_used_reg reg_left !usage_count in
       reg_map := SlotMap.add !reg_map var reg;
+      (* Update usage count *)
+      usage_count := SlotMap.add !usage_count reg (SlotMap.find_default !usage_count reg 0 + 1);
       SlotSet.remove reg_left reg
     ) in
 

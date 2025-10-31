@@ -376,16 +376,29 @@ let convert_single name body terminator (inst: Riscv_ssa.t) =
 
   | JumpIndirect { rs; possibilities } ->
       (* Optimize based on the number of possible jump targets *)
-      (match List.length possibilities with
-      | 0 ->
+      (match possibilities with
+      | [] ->
           (* No possible targets - this shouldn't happen in valid code *)
           failwith "JumpIndirect with no possibilities"
-      | 1 ->
+      | [target] ->
           (* Single target: convert to direct jump *)
-          terminator := Term.J (label_of (List.hd possibilities))
+          terminator := Term.J (label_of target)
+      | [target1; target2] ->
+          (* Two targets: generate one conditional branch *)
+          (* Load address of first target and compare with rs *)
+          let addr1 = Slot.Slot (new_slot ()) in
+          Vec.push body (La { rd = addr1; label = label_of target1 });
+          terminator := Term.Beq {
+            rs1 = slot_v rs;
+            rs2 = addr1;
+            ifso = label_of target1;
+            ifnot = label_of target2;
+          }
       | _ ->
-          (* Multiple targets: use indirect jump *)
-          (* TODO: For 2-3 targets, could generate conditional branches instead *)
+          (* 3+ targets: use indirect jump *)
+          (* TODO: For 3 targets could generate two conditional branches,
+             but this requires creating additional basic blocks which is
+             beyond the scope of convert_single function *)
           terminator := Term.Jalr {
             rd = Slot.Reg Zero;
             rs1 = slot_v rs;
