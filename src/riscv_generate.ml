@@ -1168,7 +1168,28 @@ let rec do_convert tac (expr: Mcore.expr) =
   | Cexpr_return { expr; return_kind } ->
       (match return_kind with
       | Error_result { is_error; return_ty } ->
-          failwith "TODO: riscv_generate.ml: return error"
+          (* Wrap the return value in a Result<T, E> constructor *)
+          (* tag index: 0 for Err, 1 for Ok *)
+          let tag_index = if is_error then 0 else 1 in
+          let value = do_convert tac expr in
+          let value_size = sizeof value.ty in
+
+          (* Allocate memory for the Result constructor (tag + value) *)
+          let size = 4 + value_size in
+          let rd = new_temp Mtype.T_bytes in
+          Vec.push tac (Malloc { rd; size });
+
+          (* Store the tag (0 for Err, 1 for Ok) *)
+          let tag = new_temp Mtype.T_int in
+          Vec.push tac (AssignInt { rd = tag; imm = tag_index });
+          Vec.push tac (Store { rd = tag; rs = rd; offset = 0; byte = 4 });
+
+          (* Store the value *)
+          Vec.push tac (Store { rd = value; rs = rd; offset = 4; byte = value_size });
+
+          (* Return the constructed Result value *)
+          Vec.push tac (Return rd);
+          unit
 
       | Single_value ->
           let return = do_convert tac expr in
@@ -1295,22 +1316,191 @@ let rec do_convert tac (expr: Mcore.expr) =
   | Cexpr_switch_constant { obj; cases; default; ty; _ } ->
       let index = do_convert tac obj in
       let len = List.length cases in
-      
+
       if len = 0 then (
         (* Only default case is present. No match needs to be generated. *)
         do_convert tac default
       ) else (
-        let rd = new_temp ty in 
+        let rd = new_temp ty in
 
-        let values =
-          List.map (fun (t, _) -> 
-            match t with
-            | Constant.C_bool b -> Bool.to_int b
-            | Constant.C_int { v } -> Int32.to_int v
-            | Constant.C_char v -> Uchar.to_int v
-            | _ -> failwith "TODO: unsupported switch constant type"
-          ) cases
-        in
+        (* Check if we have string or bytes constants - they need special handling *)
+        let has_string_cases = List.exists (fun (t, _) ->
+          match t with
+          | Constant.C_string _ -> true
+          | _ -> false
+        ) cases in
+
+        let has_bytes_cases = List.exists (fun (t, _) ->
+          match t with
+          | Constant.C_bytes _ -> true
+          | _ -> false
+        ) cases in
+
+        if has_string_cases then (
+          (* String switch: generate if-else chain with string comparison *)
+          let ifexit = new_label "str_match_exit_" in
+          List.iter (fun (const, expr) ->
+            match const with
+            | Constant.C_string str_val ->
+                let ifso = new_label "str_match_so_" in
+                let ifnot = new_label "str_match_not_" in
+                let equal = new_temp Mtype.T_bool in
+
+                (* Create a constant for this string *)
+                let str_const = new_temp Mtype.T_bytes in
+                let label = Printf.sprintf "str_%d" !slot in
+                let vals = String.to_seq str_val |> List.of_seq in
+                let len_str = String.length str_val |> Int.to_string in
+                let vec = Vec.empty () in
+                List.iter (fun x ->
+                  Vec.push vec (Char.code x);
+                  Vec.push vec 0) vals;
+                let values = len_str :: Vec.map_into_list vec ~unorder:Int.to_string in
+                slot := !slot + 1;
+                Vec.push global_inst (ExtArray { label; values; elem_size = 1 });
+
+                (* Load the string constant *)
+                let beginning = new_temp Mtype.T_bytes in
+                Vec.push tac (AssignLabel { rd = beginning; imm = label; });
+                Vec.push tac (Addi { rd = str_const; rs = beginning; imm = 4 });
+
+                (* Compare strings byte-by-byte (UTF-16 LE format)
+                   Strings are stored as: [length (4 bytes)] [char1_lo, char1_hi, char2_lo, char2_hi, ...]
+                   We need to compare length + content *)
+
+                (* Load lengths from both strings (at offset -4 from data pointer) *)
+                let len1 = new_temp Mtype.T_int in
+                let len2 = new_temp Mtype.T_int in
+                Vec.push tac (Load { rd = len1; rs = index; offset = -4; byte = 4 });
+                Vec.push tac (Load { rd = len2; rs = str_const; offset = -4; byte = 4 });
+
+                (* First check if lengths are equal *)
+                let len_eq = new_temp Mtype.T_bool in
+                Vec.push tac (Eq { rd = len_eq; rs1 = len1; rs2 = len2 });
+
+                let check_content = new_label "str_check_content_" in
+                Vec.push tac (Branch { cond = len_eq; ifso = check_content; ifnot });
+
+                (* If lengths equal, use memcmp to compare content *)
+                Vec.push tac (Label check_content);
+                (* Calculate byte count: length * 2 (each char is 2 bytes in UTF-16) *)
+                let two = new_temp Mtype.T_int in
+                let byte_count = new_temp Mtype.T_int in
+                Vec.push tac (AssignInt { rd = two; imm = 2 });
+                Vec.push tac (Mul { rd = byte_count; rs1 = len1; rs2 = two });
+
+                let cmp_res = new_temp Mtype.T_int in
+                let zero = new_temp Mtype.T_int in
+                Vec.push tac (CallExtern { rd = cmp_res; fn = "memcmp"; args = [index; str_const; byte_count] });
+                Vec.push tac (AssignInt { rd = zero; imm = 0 });
+                Vec.push tac (Eq { rd = equal; rs1 = cmp_res; rs2 = zero });
+                Vec.push tac (Branch { cond = equal; ifso; ifnot });
+
+                (* Generate the match case *)
+                Vec.push tac (Label ifso);
+                let ret = do_convert tac expr in
+                Vec.push tac (Assign { rd; rs = ret });
+                Vec.push tac (Jump ifexit);
+
+                Vec.push tac (Label ifnot);
+                ()
+            | _ -> failwith "Mixed string and non-string constants in switch not supported"
+          ) cases;
+
+          (* The last ifnot corresponds to the default case *)
+          let ret = do_convert tac default in
+          Vec.push tac (Assign { rd; rs = ret });
+          Vec.push tac (Jump ifexit);
+
+          Vec.push tac (Label ifexit);
+          rd
+        ) else if has_bytes_cases then (
+          (* Bytes switch: generate if-else chain with bytes comparison *)
+          let ifexit = new_label "bytes_match_exit_" in
+          List.iter (fun (const, expr) ->
+            match const with
+            | Constant.C_bytes { v; _ } ->
+                let ifso = new_label "bytes_match_so_" in
+                let ifnot = new_label "bytes_match_not_" in
+                let equal = new_temp Mtype.T_bool in
+
+                (* Create a constant for this bytes value *)
+                let bytes_const = new_temp Mtype.T_bytes in
+                let label = Printf.sprintf "bytes_%d" !slot in
+                let vals = String.to_seq v |> List.of_seq |> List.map (fun x -> Char.code x |> Int.to_string) in
+                let len_str = String.length v |> Int.to_string in
+                let values = len_str :: vals in
+                slot := !slot + 1;
+                Vec.push global_inst (ExtArray { label; values; elem_size = 1 });
+
+                (* Load the bytes constant *)
+                let beginning = new_temp Mtype.T_bytes in
+                Vec.push tac (AssignLabel { rd = beginning; imm = label; });
+                Vec.push tac (Addi { rd = bytes_const; rs = beginning; imm = 4 });
+
+                (* Compare bytes: bytes are stored as [length (4 bytes)] [byte1, byte2, ...]
+                   Unlike strings, each byte is 1 byte (not UTF-16) *)
+
+                (* Load lengths from both bytes values *)
+                let len1 = new_temp Mtype.T_int in
+                let len2 = new_temp Mtype.T_int in
+                Vec.push tac (Load { rd = len1; rs = index; offset = -4; byte = 4 });
+                Vec.push tac (Load { rd = len2; rs = bytes_const; offset = -4; byte = 4 });
+
+                (* First check if lengths are equal *)
+                let len_eq = new_temp Mtype.T_bool in
+                Vec.push tac (Eq { rd = len_eq; rs1 = len1; rs2 = len2 });
+
+                let check_content = new_label "bytes_check_content_" in
+                Vec.push tac (Branch { cond = len_eq; ifso = check_content; ifnot });
+
+                (* If lengths equal, use memcmp to compare content *)
+                Vec.push tac (Label check_content);
+                (* For bytes, byte count = length (each byte is 1 byte) *)
+                let cmp_res = new_temp Mtype.T_int in
+                let zero = new_temp Mtype.T_int in
+                Vec.push tac (CallExtern { rd = cmp_res; fn = "memcmp"; args = [index; bytes_const; len1] });
+                Vec.push tac (AssignInt { rd = zero; imm = 0 });
+                Vec.push tac (Eq { rd = equal; rs1 = cmp_res; rs2 = zero });
+                Vec.push tac (Branch { cond = equal; ifso; ifnot });
+
+                (* Generate the match case *)
+                Vec.push tac (Label ifso);
+                let ret = do_convert tac expr in
+                Vec.push tac (Assign { rd; rs = ret });
+                Vec.push tac (Jump ifexit);
+
+                Vec.push tac (Label ifnot);
+                ()
+            | _ -> failwith "Mixed bytes and non-bytes constants in switch not supported"
+          ) cases;
+
+          (* The last ifnot corresponds to the default case *)
+          let ret = do_convert tac default in
+          Vec.push tac (Assign { rd; rs = ret });
+          Vec.push tac (Jump ifexit);
+
+          Vec.push tac (Label ifexit);
+          rd
+        ) else (
+          (* Non-string/bytes switch: use existing integer-based logic *)
+          let values =
+            List.map (fun (t, _) ->
+              match t with
+              | Constant.C_bool b -> Bool.to_int b
+              | Constant.C_int { v } -> Int32.to_int v
+              | Constant.C_char v -> Uchar.to_int v
+              | Constant.C_byte { v; _ } -> v
+              | Constant.C_int64 { v; _ } -> Int64.to_int v
+              | Constant.C_uint { v; _ } -> Int32.to_int (Basic_uint32.to_int32 v)
+              | Constant.C_uint64 { v; _ } -> Int64.to_int (Basic_uint64.to_int64 v)
+              | Constant.C_string _ -> failwith "Internal error: string constant in non-string switch"
+              | Constant.C_bytes _ -> failwith "Internal error: bytes constant in non-bytes switch"
+              | Constant.C_float _ -> failwith "TODO: switch on float constants is not supported"
+              | Constant.C_double _ -> failwith "TODO: switch on double constants is not supported"
+              | Constant.C_bigint _ -> failwith "TODO: switch on bigint constants is not supported"
+            ) cases
+          in
         
         let mx = List.fold_left (fun mx x -> max mx x) (-2147483647-1) values in
         let mn = List.fold_left (fun mn x -> min mn x) 2147483647 values in
@@ -1436,8 +1626,9 @@ let rec do_convert tac (expr: Mcore.expr) =
 
           Vec.push tac (JumpIndirect { rs = target; possibilities });
           Vec.append tac tac_cases;);
-        
-        rd
+
+          rd
+        )
       )
 
   | Cexpr_handle_error _ ->
@@ -1473,7 +1664,7 @@ let rec do_convert tac (expr: Mcore.expr) =
   | Cexpr_const { c; ty; _ } ->
       let rd = new_temp ty in
       (match c with
-      (* Note each element of string is 2 bytes long. TODO *)
+      (* Note: Each element of string is 2 bytes long (character code + null byte) *)
       | C_string v ->
           let label = Printf.sprintf "str_%d" !slot in
           let vals = String.to_seq v |> List.of_seq in
